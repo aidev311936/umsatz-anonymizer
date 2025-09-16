@@ -29,36 +29,43 @@ app.post('/categorize', async (req, res) => {
       transactions.map((t, i) => `${i + 1}. ${t}`).join('\n') +
       `\n\nErgebnisformat:\n[ "Kategorie1", "Kategorie2", ... ]\n\n`;
 
-    // Call the OpenAI completions endpoint
+    // Call OpenAI completion
     const completion = await openai.completions.create({
       model: 'gpt-3.5-turbo-instruct',
-      prompt: prompt,
+      prompt,
       max_tokens: 100,
       temperature: 0,
     });
 
-    const text = completion.choices[0].text.trim();
+    const text = completion.data.choices[0].text.trim();
     let categories;
     try {
-      // Try to parse the JSON array directly
       categories = JSON.parse(text);
     } catch {
-      // Fallback: split by lines if JSON parsing fails
-      categories = text.split('\n').map((s) => s.trim()).filter(Boolean);
+      categories = text
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
     res.json({ categories });
   } catch (err) {
+    // Better error handling: report OpenAI error details and status
     console.error(err);
-    res.status(500).json({ error: 'OpenAI API error' });
+    const status = err?.status || err?.response?.status || 500;
+    const message =
+      err?.error?.message ||
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      'OpenAI API error';
+    res.status(status).json({ error: message });
   }
 });
 
-// Simple health route
-app.get('/', (req, res) => {
-  res.send('Running node server.js');
+// Optional health route
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
-// Start the server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
