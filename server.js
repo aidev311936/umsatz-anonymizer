@@ -22,22 +22,31 @@ app.post('/categorize', async (req, res) => {
   }
 
   try {
-    // Construct prompt for categorization in German
-    const prompt =
-      `Kategorisiere die folgenden Umsatzbeschreibungen in Oberkategorien wie Essen, Reisen, Einkaufen, Gesundheit, Unterhaltung, Sonstiges. ` +
-      `Gib das Ergebnis als JSON-Array in gleicher Reihenfolge zurück.\n\n` +
-      transactions.map((t, i) => `${i + 1}. ${t}`).join('\n') +
-      `\n\nErgebnisformat:\n[ "Kategorie1", "Kategorie2", ... ]\n\n`;
+    // Build system and user messages for chat completion
+    const systemMessage = {
+      role: 'system',
+      content:
+        'Du bist ein Helfer, der Transaktionsbeschreibungen in allgemeine Kategorien einordnet. ' +
+        'Erlaubte Kategorien sind Essen, Reisen, Einkaufen, Gesundheit, Unterhaltung, Sonstiges. ' +
+        'Antworte immer nur mit einem JSON-Array der Kategorien in derselben Reihenfolge wie die Eingaben.',
+    };
+    const userMessage = {
+      role: 'user',
+      content:
+        'Kategorisiere die folgenden Umsatzbeschreibungen:\n' +
+        transactions.map((t, i) => `${i + 1}. ${t}`).join('\n') +
+        '\n\nFormatiere die Antwort als JSON-Array wie ["Kategorie1", "Kategorie2", ...] ohne weitere Erläuterungen.',
+    };
 
-    // Call OpenAI completion
-    const completion = await openai.completions.create({
-      model: 'gpt-3.5-turbo-instruct',
-      prompt,
-      max_tokens: 100,
+    // Call OpenAI chat completion with gpt-3.5-turbo model
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [systemMessage, userMessage],
+      max_tokens: 200,
       temperature: 0,
     });
 
-    const text = completion.data.choices[0].text.trim();
+    const text = completion.choices?.[0]?.message?.content?.trim() || '';
     let categories;
     try {
       categories = JSON.parse(text);
@@ -47,9 +56,8 @@ app.post('/categorize', async (req, res) => {
         .map((s) => s.trim())
         .filter(Boolean);
     }
-    res.json({ categories });
+    return res.json({ categories });
   } catch (err) {
-    // Better error handling: report OpenAI error details and status
     console.error(err);
     const status = err?.status || err?.response?.status || 500;
     const message =
@@ -57,7 +65,7 @@ app.post('/categorize', async (req, res) => {
       err?.response?.data?.error?.message ||
       err?.message ||
       'OpenAI API error';
-    res.status(status).json({ error: message });
+    return res.status(status).json({ error: message });
   }
 });
 
