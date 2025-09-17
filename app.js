@@ -98,21 +98,35 @@ anonymizeBtn.addEventListener('click', () => {
     })
     .then((data) => {
       let categories = data.categories || [];
-      // Wenn die API Kategorien als String oder Objekt zurückgibt, in ein Array umwandeln.
+      // Wenn die API-Kategorien als String oder Objekt zurückgegeben werden, konvertiere sie in ein Array.
       if (!Array.isArray(categories)) {
         try {
           // Versuche, den String direkt als JSON zu parsen (z. B. "[\"Essen\",\"Reisen\"]").
           categories = JSON.parse(categories);
         } catch {
-          // Entferne führende oder abschließende Klammern/geschweifte Klammern und Anführungszeichen
+          // Entferne führende oder abschließende Klammern/geschweifte Klammern und Anführungszeichen, dann splitte
           categories = String(categories)
             .replace(/^[\[{]*|[\]}]*$/g, '')
             .split(',')
-            .map((s) => s.replace(/"/g, '').trim())
+            .map((s) => s.replace(/\"/g, '').trim())
             .filter(Boolean);
         }
       }
-      // Weisem jeder Zeile eine Kategorie zu (falls vorhanden)
+      // Sonderfall: Wenn categories ein Array mit genau einem String ist, der selbst ein JSON-Array enthält,
+      // parse diesen String, um die tatsächlichen Kategorien zu extrahieren.
+      if (Array.isArray(categories) && categories.length === 1 && typeof categories[0] === 'string') {
+        const catStr = categories[0].trim();
+        try {
+          categories = JSON.parse(catStr);
+        } catch {
+          categories = catStr
+            .replace(/^[\[{]*|[\]}]*$/g, '')
+            .split(',')
+            .map((s) => s.replace(/\"/g, '').trim())
+            .filter(Boolean);
+        }
+      }
+      // Weist jeder Zeile eine Kategorie zu (falls vorhanden)
       csvData = csvData.map((row, idx) => ({
         ...row,
         Kategorie: categories[idx] || '',
