@@ -62,6 +62,8 @@ function anonymize(data) {
 
 const fileInput = document.getElementById('csvFile');
 const anonymizeBtn = document.getElementById('anonymizeBtn');
+// Button to trigger categorization; may not exist if HTML hasn't been updated yet
+const categorizeBtn = document.getElementById('categorizeBtn');
 let csvData = [];
 
 fileInput.addEventListener('change', (event) => {
@@ -72,69 +74,74 @@ fileInput.addEventListener('change', (event) => {
     csvData = parseCSV(e.target.result);
     renderTable(csvData);
     anonymizeBtn.disabled = false;
+    // Disable categorize button until data has been anonymized
+    if (categorizeBtn) categorizeBtn.disabled = true;
   };
   reader.readAsText(file, 'UTF-8');
 });
 
+// Anonymize data only; enables categorize button after anonymization
 anonymizeBtn.addEventListener('click', () => {
-  // anonymize locally
   csvData = anonymize(csvData);
   renderTable(csvData);
-
-  // Send anonymized Verwendungszwecke to backend for categorization
-  const transactions = csvData.map((row) => row['Verwendungszweck']);
-  fetch('https://umsatz-api.onrender.com/categorize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transactions }),
-  })
-    .then((resp) => {
-      if (!resp.ok) {
-        return resp.json().then((e) => {
-          throw new Error(e.error || resp.statusText);
-        });
-      }
-      return resp.json();
-    })
-    .then((data) => {
-      let categories = data.categories || [];
-      // Wenn die API-Kategorien als String oder Objekt zurückgegeben werden, konvertiere sie in ein Array.
-      if (!Array.isArray(categories)) {
-        try {
-          // Versuche, den String direkt als JSON zu parsen (z. B. "[\"Essen\",\"Reisen\"]").
-          categories = JSON.parse(categories);
-        } catch {
-          // Entferne führende oder abschließende Klammern/geschweifte Klammern und Anführungszeichen, dann splitte
-          categories = String(categories)
-            .replace(/^[\[{]*|[\]}]*$/g, '')
-            .split(',')
-            .map((s) => s.replace(/\"/g, '').trim())
-            .filter(Boolean);
-        }
-      }
-      // Sonderfall: Wenn categories ein Array mit genau einem String ist, der selbst ein JSON-Array enthält,
-      // parse diesen String, um die tatsächlichen Kategorien zu extrahieren.
-      if (Array.isArray(categories) && categories.length === 1 && typeof categories[0] === 'string') {
-        const catStr = categories[0].trim();
-        try {
-          categories = JSON.parse(catStr);
-        } catch {
-          categories = catStr
-            .replace(/^[\[{]*|[\]}]*$/g, '')
-            .split(',')
-            .map((s) => s.replace(/\"/g, '').trim())
-            .filter(Boolean);
-        }
-      }
-      // Weist jeder Zeile eine Kategorie zu (falls vorhanden)
-      csvData = csvData.map((row, idx) => ({
-        ...row,
-        Kategorie: categories[idx] || '',
-      }));
-      renderTable(csvData);
-    })
-    .catch((err) => {
-      console.error('Fehler bei der Kategorisierung:', err);
-      alert('Fehler bei der Kategorisierung: ' + err.message);
-    });
+  // Enable categorize button now that data is anonymized
+  if (categorizeBtn) categorizeBtn.disabled = false;
 });
+
+// Send anonymized data to backend for categorization when categorize button is clicked
+if (categorizeBtn) {
+  categorizeBtn.addEventListener('click', () => {
+    const transactions = csvData.map((row) => row['Verwendungszweck']);
+    fetch('https://umsatz-api.onrender.com/categorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactions }),
+    })
+      .then((resp) => {
+        if (!resp.ok) {
+          return resp.json().then((e) => {
+            throw new Error(e.error || resp.statusText);
+          });
+        }
+        return resp.json();
+      })
+      .then((data) => {
+        let categories = data.categories || [];
+        // If categories is not an array, attempt to parse or split it
+        if (!Array.isArray(categories)) {
+          try {
+            categories = JSON.parse(categories);
+          } catch {
+            categories = String(categories)
+              .replace(/^[\[{]*|[\]}]*$/g, '')
+              .split(',')
+              .map((s) => s.replace(/"/g, '').trim())
+              .filter(Boolean);
+          }
+        }
+        // If categories is an array with one string containing a JSON array, parse it
+        if (Array.isArray(categories) && categories.length === 1 && typeof categories[0] === 'string') {
+          const catStr = categories[0].trim();
+          try {
+            categories = JSON.parse(catStr);
+          } catch {
+            categories = catStr
+              .replace(/^[\[{]*|[\]}]*$/g, '')
+              .split(',')
+              .map((s) => s.replace(/"/g, '').trim())
+              .filter(Boolean);
+          }
+        }
+        // Assign categories to each row
+        csvData = csvData.map((row, idx) => ({
+          ...row,
+          Kategorie: categories[idx] || '',
+        }));
+        renderTable(csvData);
+      })
+      .catch((err) => {
+        console.error('Fehler bei der Kategorisierung:', err);
+        alert('Fehler bei der Kategorisierung: ' + err.message);
+      });
+  });
+}
