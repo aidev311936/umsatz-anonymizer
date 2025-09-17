@@ -48,14 +48,19 @@ app.post('/categorize', async (req, res) => {
 
     const text = completion.choices?.[0]?.message?.content?.trim() || '';
     let categories;
-    try {
-      categories = JSON.parse(text);
-    } catch {
-      categories = text
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
+        try {
+          // Try to parse the OpenAI response directly as JSON (e.g. ["Essen", "Reisen"]).
+          categories = JSON.parse(text);
+        } catch {
+          // Fallback: remove any leading/trailing brackets or braces and quotes, then split by comma.
+          const trimmed = text
+            .replace(/^[\[{]*|[\]}]*$/g, '')
+            .trim();
+          categories = trimmed
+            .split(',')
+            .map((s) => s.replace(/"/g, '').trim())
+            .filter(Boolean);
+        }
     return res.json({ categories });
   } catch (err) {
     console.error(err);
