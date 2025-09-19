@@ -1,21 +1,31 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Umsatz‑Anonymisierung</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSV-Umsätze pseudonymisieren & kategorisieren</title>
   <style>
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 4px; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:24px}
+    header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    button{padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    table{border-collapse:collapse;width:100%;margin-top:16px}
+    th,td{border:1px solid #eee;padding:8px;text-align:left;font-size:14px}
+    thead th{position:sticky;top:0;background:#fafafa}
+    .muted{color:#666;font-size:12px}
   </style>
 </head>
 <body>
-  <h1>CSV‑Umsätze pseudonymisieren</h1>
-  <input type="file" id="csvFile" accept=".csv" />
-  <button id="anonymizeBtn" disabled>Anonymisieren</button>
-  <button id="categorizeBtn" disabled>Kategorisieren</button>
-  <div id="tableContainer"></div>
+  <header>
+    <input id="fileInput" type="file" accept=".csv" />
+    <button id="anonymizeBtn" disabled>Pseudonymisieren</button>
+    <button id="categorizeBtn" disabled>Kategorisieren</button>
+    <span id="status" class="muted"></span>
+  </header>
 
-  <!-- Cache busting: Append version parameter to ensure browsers load latest JS -->
-  <script src="app.js?v=20250917"></script>
+  <div id="tableWrap"></div>
+
+  <!-- Cache-Busting bei Bedarf Parameter erhöhen -->
+  <script src="app.js?v=20250919"></script>
 </body>
 </html>
