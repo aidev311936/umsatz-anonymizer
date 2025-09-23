@@ -12,9 +12,16 @@ function parseCSV(text) {
   });
 }
 
+const DATE_KEYS = ['Buchungstag', 'Buchungsdatum', 'Datum', 'Wertstellung', 'Wertstellungsdatum'];
+
 // Render table in the DOM
 function renderTable(data) {
   const container = document.getElementById('tableContainer');
+  if (!data.length) {
+    container.innerHTML = '';
+    return;
+  }
+
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
@@ -45,6 +52,79 @@ function renderTable(data) {
   container.appendChild(table);
 }
 
+function parseDateString(value) {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  const germanMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+  if (germanMatch) {
+    let year = Number(germanMatch[3]);
+    if (year < 100) {
+      year += year < 70 ? 2000 : 1900;
+    }
+    const month = Number(germanMatch[2]) - 1;
+    const day = Number(germanMatch[1]);
+    const date = new Date(year, month, day);
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const date = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+  return null;
+}
+
+function getDateValue(row) {
+  for (const key of DATE_KEYS) {
+    if (row[key]) {
+      const parsed = parseDateString(row[key]);
+      if (parsed) {
+        return parsed.getTime();
+      }
+    }
+  }
+  return null;
+}
+
+function mergeTransactions(existing, incoming) {
+  const combined = [...existing, ...incoming];
+  const decorated = combined.map((row, index) => ({
+    row,
+    index,
+    dateValue: getDateValue(row) ?? Number.NEGATIVE_INFINITY,
+  }));
+
+  decorated.sort((a, b) => {
+    if (a.dateValue === b.dateValue) {
+      return a.index - b.index;
+    }
+    return b.dateValue - a.dateValue;
+  });
+
+  return decorated.map((entry) => entry.row);
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(reader.error || new Error('Unbekannter Lesefehler'));
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
 // Remove sensitive information from Verwendungszweck
 function anonymize(data) {
   return data.map((row) => {
@@ -67,17 +147,26 @@ const categorizeBtn = document.getElementById('categorizeBtn');
 let csvData = [];
 
 fileInput.addEventListener('change', (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    csvData = parseCSV(e.target.result);
-    renderTable(csvData);
-    anonymizeBtn.disabled = false;
-    // Disable categorize button until data has been anonymized
-    if (categorizeBtn) categorizeBtn.disabled = true;
-  };
-  reader.readAsText(file, 'UTF-8');
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+
+  Promise.all(files.map((file) => readFileAsText(file)))
+    .then((contents) => {
+      const parsed = contents.flatMap((text) => parseCSV(text));
+      csvData = mergeTransactions(csvData, parsed);
+      renderTable(csvData);
+      anonymizeBtn.disabled = csvData.length === 0;
+      // Disable categorize button until data has been anonymized
+      if (categorizeBtn) categorizeBtn.disabled = true;
+    })
+    .catch((err) => {
+      console.error('Fehler beim Lesen der Dateien:', err);
+      alert('Fehler beim Lesen der Dateien: ' + err.message);
+    })
+    .finally(() => {
+      // Allow selecting the same file again by resetting the input value
+      event.target.value = '';
+    });
 });
 
 // Anonymize data only; enables categorize button after anonymization
