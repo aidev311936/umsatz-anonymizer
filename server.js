@@ -10,9 +10,13 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Initialize OpenAI client using v4 API
-const openai = new OpenAI({
+let openaiClient = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const setOpenAIClient = (client) => {
+  openaiClient = client;
+};
 
 // POST route to categorize transactions
 app.post('/categorize', async (req, res) => {
@@ -39,7 +43,7 @@ app.post('/categorize', async (req, res) => {
     };
 
     // Call OpenAI chat completion with gpt-3.5-turbo model
-    const completion = await openai.chat.completions.create({
+    const completion = await openaiClient.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [systemMessage, userMessage],
       max_tokens: 200,
@@ -79,6 +83,10 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+module.exports = { app, setOpenAIClient };
