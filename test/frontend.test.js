@@ -73,18 +73,18 @@ test('anonymize replaces digit sequences for Lastschrift and Rücklastschrift', 
   assert.strictEqual(anonymized[1].Verwendungszweck, 'Rückgabe XXX-XXX');
 });
 
-test('anonymize masks last names for transfers to private persons', () => {
+test('anonymize masks last names and digits for transfers to private persons', () => {
   const rows = [
     {
       Type: 'Überweisung',
-      Verwendungszweck: 'Miete für Max Mustermann',
+      Verwendungszweck: 'Miete 12345 für Max Mustermann',
       Zahlungspartner: 'Max Mustermann',
     },
   ];
 
   const [result] = anonymize(rows);
 
-  assert.strictEqual(result.Verwendungszweck, 'Miete für Max XXX');
+  assert.strictEqual(result.Verwendungszweck, 'Miete XXX für Max XXX');
   assert.strictEqual(result.Zahlungspartner, 'Max XXX');
 });
 
@@ -117,18 +117,18 @@ test('anonymize keeps identical usage and partner text for companies', () => {
   assert.deepStrictEqual(result, rows[0]);
 });
 
-test('anonymize masks last names for top-ups from private persons', () => {
+test('anonymize masks last names and digits for top-ups from private persons', () => {
   const rows = [
     {
       Type: 'Aufladung',
-      Verwendungszweck: 'Aufladung Anna Lena Meier',
+      Verwendungszweck: 'Aufladung 9876 Anna Lena Meier',
       Zahlungspartner: 'ANNA LENA MEIER',
     },
   ];
 
   const [result] = anonymize(rows);
 
-  assert.strictEqual(result.Verwendungszweck, 'Aufladung Anna Lena XXX');
+  assert.strictEqual(result.Verwendungszweck, 'Aufladung XXX Anna Lena XXX');
   assert.strictEqual(result.Zahlungspartner, 'ANNA LENA XXX');
 });
 
@@ -296,7 +296,7 @@ test('anonymize fully protects provided example dataset', () => {
     {
       ...rows[16],
       Verwendungszweck:
-        'AZV-Ref.Nr XXX-XXX XX/XXXX K-NR. XXX Ihre Rechnung online bei www.vodafone.de/meinkabel',
+        'AZV-Ref.Nr XXX-XXX XXX/XXX K-NR. XXX Ihre Rechnung online bei www.vodafone.de/meinkabel',
     },
   ]);
 });

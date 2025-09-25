@@ -333,16 +333,18 @@ function anonymize(data) {
     }
 
     if (type === 'uberweisung') {
+      if (usageKey && usage) {
+        updated[usageKey] = maskDigits(usage);
+      }
+
       if (partnerKey && partner && isLikelyPersonName(partner)) {
         const lastName = getLastName(partner);
         if (lastName) {
-          if (usageKey && usage) {
-            updated[usageKey] = maskName(usage, lastName);
+          if (usageKey && updated[usageKey]) {
+            updated[usageKey] = maskName(updated[usageKey], lastName);
           }
           updated[partnerKey] = maskName(partner, lastName);
         }
-      } else if (usageKey && usage) {
-        updated[usageKey] = maskDigits(usage);
       }
 
       if (usageKey && updated[usageKey]) {
@@ -355,11 +357,15 @@ function anonymize(data) {
     }
 
     if (type === 'aufladung') {
+      if (usageKey && usage) {
+        updated[usageKey] = maskDigits(usage);
+      }
+
       if (partnerKey && partner && isLikelyPersonName(partner)) {
         const lastName = getLastName(partner);
         if (lastName) {
-          if (usageKey && usage) {
-            updated[usageKey] = maskName(usage, lastName);
+          if (usageKey && updated[usageKey]) {
+            updated[usageKey] = maskName(updated[usageKey], lastName);
           }
           updated[partnerKey] = maskName(partner, lastName);
         }
