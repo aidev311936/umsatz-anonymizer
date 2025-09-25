@@ -247,8 +247,46 @@ function maskName(text, lastName) {
   return String(text).replace(pattern, 'XXX');
 }
 
+function collectPrivateLastNames(data) {
+  const lastNames = new Set();
+  data.forEach((row) => {
+    const type = stripDiacritics(getTransactionType(row).toLowerCase()).replace(/^ruck/, 'rueck');
+    if (!['uberweisung', 'aufladung'].includes(type)) {
+      return;
+    }
+
+    const partnerKey = getFirstMatchingKey(row, PARTNER_KEYS);
+    if (!partnerKey) return;
+    const partner = row[partnerKey];
+    if (!partner || !isLikelyPersonName(partner)) {
+      return;
+    }
+
+    const lastName = getLastName(partner);
+    if (lastName) {
+      lastNames.add(lastName);
+    }
+  });
+  return lastNames;
+}
+
+function maskKnownLastNames(value, knownLastNames) {
+  if ((!value && value !== 0) || !knownLastNames.size) {
+    return value;
+  }
+
+  let result = String(value);
+  knownLastNames.forEach((lastName) => {
+    const pattern = new RegExp(`\\b${escapeRegExp(String(lastName))}\\b`, 'gi');
+    result = result.replace(pattern, 'XXX');
+  });
+  return result;
+}
+
 // Remove sensitive information according to transaction rules
 function anonymize(data) {
+  const knownPrivateLastNames = collectPrivateLastNames(data);
+
   return data.map((row) => {
     const updated = { ...row };
 
@@ -271,12 +309,25 @@ function anonymize(data) {
     const type = stripDiacritics(getTransactionType(row).toLowerCase()).replace(/^ruck/, 'rueck');
 
     if (type === 'clearing') {
-      return { ...row };
+      const result = { ...row };
+      if (usageKey && result[usageKey]) {
+        result[usageKey] = maskKnownLastNames(result[usageKey], knownPrivateLastNames);
+      }
+      if (partnerKey && result[partnerKey]) {
+        result[partnerKey] = maskKnownLastNames(result[partnerKey], knownPrivateLastNames);
+      }
+      return result;
     }
 
     if (type === 'lastschrift' || type === 'ruecklastschrift') {
       if (usageKey && usage) {
         updated[usageKey] = maskDigits(usage);
+      }
+      if (usageKey && updated[usageKey]) {
+        updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
+      }
+      if (partnerKey && updated[partnerKey]) {
+        updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
       }
       return updated;
     }
@@ -293,6 +344,13 @@ function anonymize(data) {
       } else if (usageKey && usage) {
         updated[usageKey] = maskDigits(usage);
       }
+
+      if (usageKey && updated[usageKey]) {
+        updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
+      }
+      if (partnerKey && updated[partnerKey]) {
+        updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
+      }
       return updated;
     }
 
@@ -306,7 +364,21 @@ function anonymize(data) {
           updated[partnerKey] = maskName(partner, lastName);
         }
       }
+
+      if (usageKey && updated[usageKey]) {
+        updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
+      }
+      if (partnerKey && updated[partnerKey]) {
+        updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
+      }
       return updated;
+    }
+
+    if (usageKey && updated[usageKey]) {
+      updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
+    }
+    if (partnerKey && updated[partnerKey]) {
+      updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
     }
 
     return updated;
