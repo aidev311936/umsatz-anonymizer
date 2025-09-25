@@ -129,18 +129,230 @@ function readFileAsText(file) {
   });
 }
 
-// Remove sensitive information from Verwendungszweck
-function anonymize(data) {
-  return data.map((row) => {
-    if (row['Verwendungszweck']) {
-      let text = row['Verwendungszweck'];
-      // Replace long numbers (4+ digits) with ***
-      text = text.replace(/\b\d{4,}\b/g, '***');
-      // Replace names (simple heuristic: words starting with a capital letter)
-      text = text.replace(/\b[A-ZÄÖÜ][a-zäöüß]+/g, 'XXX');
-      row['Verwendungszweck'] = text;
+const TYPE_KEYS = ['Type', 'Typ', 'type', 'Umsatzart', 'Umsatztyp', 'Buchungstyp', 'Art'];
+const COMPANY_SUFFIXES = [
+  'gmbh',
+  'mbh',
+  'ag',
+  'kg',
+  'kgaa',
+  'ug',
+  'se',
+  'oy',
+  'oyj',
+  'ab',
+  'sarl',
+  'srl',
+  'spa',
+  'bv',
+  'nv',
+  'inc',
+  'llc',
+  'ltd',
+  'limited',
+  'company',
+  'co',
+  'sas',
+  'sa',
+  'plc',
+];
+const PARTNER_KEYS = [
+  'Zahlungspartner',
+  'Beguenstigter/Zahlungspflichtiger',
+  'Begünstigter/Zahlungspflichtiger',
+  'Auftraggeber/Empfänger',
+  'Auftraggeber',
+  'Empfänger',
+  'Name',
+  'Partner',
+];
+const USAGE_KEYS = ['Verwendungszweck', 'Verwendung'];
+
+function stripDiacritics(text) {
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function getFirstMatchingKey(row, keys) {
+  return keys.find((key) => Object.prototype.hasOwnProperty.call(row, key) && row[key]);
+}
+
+function getTransactionType(row) {
+  const key = getFirstMatchingKey(row, TYPE_KEYS);
+  if (!key) return '';
+  return String(row[key] || '').trim();
+}
+
+function normalizeForComparison(value) {
+  if (!value && value !== 0) return '';
+  return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isLikelyPersonName(value) {
+  if (!value && value !== 0) return false;
+  const text = String(value).trim();
+  if (!text) return false;
+  if (/\d/.test(text)) return false;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4) {
+    return false;
+  }
+
+  const lastWord = words[words.length - 1];
+  if (COMPANY_SUFFIXES.includes(lastWord.toLowerCase())) {
+    return false;
+  }
+
+  const hasLowercase = words.some((word) => /[a-zäöüß]/.test(word));
+  if (hasLowercase) {
+    return words.every((word) => /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'\-]+$/.test(word));
+  }
+
+  if (!words.every((word) => /^[A-ZÄÖÜß'\-]{2,}$/.test(word))) {
+    return false;
+  }
+
+  if (lastWord.length <= 2) {
+    return words.length >= 3;
+  }
+
+  return true;
+}
+
+function getLastName(value) {
+  if (!value && value !== 0) return '';
+  const words = String(value)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length < 2) {
+    return '';
+  }
+  return words[words.length - 1];
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function maskDigits(value) {
+  if (!value && value !== 0) return value;
+  return String(value).replace(/\d+/g, 'XXX');
+}
+
+function maskName(text, lastName) {
+  if (!text && text !== 0) return text;
+  if (!lastName) return text;
+  const pattern = new RegExp(`\\b${escapeRegExp(String(lastName))}\\b`, 'gi');
+  return String(text).replace(pattern, 'XXX');
+}
+
+function collectPrivateLastNames(data) {
+  const lastNames = new Set();
+  data.forEach((row) => {
+    const type = stripDiacritics(getTransactionType(row).toLowerCase()).replace(/^ruck/, 'rueck');
+    if (!['uberweisung', 'aufladung'].includes(type)) {
+      return;
     }
-    return row;
+
+    const partnerKey = getFirstMatchingKey(row, PARTNER_KEYS);
+    if (!partnerKey) return;
+    const partner = row[partnerKey];
+    if (!partner || !isLikelyPersonName(partner)) {
+      return;
+    }
+
+    const lastName = getLastName(partner);
+    if (lastName) {
+      lastNames.add(lastName);
+    }
+  });
+  return lastNames;
+}
+
+function maskKnownLastNames(value, knownLastNames) {
+  if ((!value && value !== 0) || !knownLastNames.size) {
+    return value;
+  }
+
+  let result = String(value);
+  knownLastNames.forEach((lastName) => {
+    const pattern = new RegExp(`\\b${escapeRegExp(String(lastName))}\\b`, 'gi');
+    result = result.replace(pattern, 'XXX');
+  });
+  return result;
+}
+
+// Remove sensitive information according to transaction rules
+function anonymize(data) {
+  const knownPrivateLastNames = collectPrivateLastNames(data);
+
+  return data.map((row) => {
+    const updated = { ...row };
+
+    const usageKey = getFirstMatchingKey(row, USAGE_KEYS);
+    const partnerKey = getFirstMatchingKey(row, PARTNER_KEYS);
+    const usage = usageKey ? row[usageKey] : undefined;
+    const partner = partnerKey ? row[partnerKey] : undefined;
+
+    const type = stripDiacritics(getTransactionType(row).toLowerCase()).replace(/^ruck/, 'rueck');
+    const isClearing = type === 'clearing';
+    const isTransfer = type === 'uberweisung';
+    const isTopUp = type === 'aufladung';
+    const isDirectDebit = type === 'lastschrift';
+    const isChargeback = type === 'ruecklastschrift';
+
+    if (isClearing) {
+      return { ...row };
+    }
+
+    const usageEqualsPartner =
+      usageKey &&
+      partnerKey &&
+      usage &&
+      partner &&
+      normalizeForComparison(usage) === normalizeForComparison(partner);
+    const partnerIsPerson = partner ? isLikelyPersonName(partner) : false;
+
+    if ((isDirectDebit || isChargeback || isTransfer || isTopUp) && usageKey && usage) {
+      updated[usageKey] = maskDigits(usage);
+    } else if (usageKey && usage) {
+      updated[usageKey] = usage;
+    }
+
+    if ((isTransfer || isTopUp) && partnerKey && partnerIsPerson) {
+      const lastName = getLastName(partner);
+      if (lastName) {
+        if (usageKey && updated[usageKey]) {
+          updated[usageKey] = maskName(updated[usageKey], lastName);
+        }
+        updated[partnerKey] = maskName(partner, lastName);
+      }
+    } else if (partnerKey && partner) {
+      updated[partnerKey] = partner;
+    }
+
+    if (usageEqualsPartner && !partnerIsPerson) {
+      if (!(isTransfer || isTopUp)) {
+        return { ...row };
+      }
+      if (partnerKey) {
+        updated[partnerKey] = row[partnerKey];
+      }
+    }
+
+    if (!(usageEqualsPartner && !partnerIsPerson)) {
+      if (usageKey && updated[usageKey]) {
+        updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
+      }
+      if (partnerKey && updated[partnerKey]) {
+        updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
+      }
+    } else if ((isTransfer || isTopUp) && usageKey && updated[usageKey]) {
+      updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
+    }
+
+    return updated;
   });
 }
 
