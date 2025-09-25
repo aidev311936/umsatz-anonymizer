@@ -295,96 +295,61 @@ function anonymize(data) {
     const usage = usageKey ? row[usageKey] : undefined;
     const partner = partnerKey ? row[partnerKey] : undefined;
 
-    if (
+    const type = stripDiacritics(getTransactionType(row).toLowerCase()).replace(/^ruck/, 'rueck');
+    const isClearing = type === 'clearing';
+    const isTransfer = type === 'uberweisung';
+    const isTopUp = type === 'aufladung';
+    const isDirectDebit = type === 'lastschrift';
+    const isChargeback = type === 'ruecklastschrift';
+
+    if (isClearing) {
+      return { ...row };
+    }
+
+    const usageEqualsPartner =
       usageKey &&
       partnerKey &&
       usage &&
       partner &&
-      normalizeForComparison(usage) === normalizeForComparison(partner) &&
-      !isLikelyPersonName(partner)
-    ) {
-      return { ...row };
+      normalizeForComparison(usage) === normalizeForComparison(partner);
+    const partnerIsPerson = partner ? isLikelyPersonName(partner) : false;
+
+    if ((isDirectDebit || isChargeback || isTransfer || isTopUp) && usageKey && usage) {
+      updated[usageKey] = maskDigits(usage);
+    } else if (usageKey && usage) {
+      updated[usageKey] = usage;
     }
 
-    const type = stripDiacritics(getTransactionType(row).toLowerCase()).replace(/^ruck/, 'rueck');
-
-    if (type === 'clearing') {
-      const result = { ...row };
-      if (usageKey && result[usageKey]) {
-        result[usageKey] = maskKnownLastNames(result[usageKey], knownPrivateLastNames);
-      }
-      if (partnerKey && result[partnerKey]) {
-        result[partnerKey] = maskKnownLastNames(result[partnerKey], knownPrivateLastNames);
-      }
-      return result;
-    }
-
-    if (type === 'lastschrift' || type === 'ruecklastschrift') {
-      if (usageKey && usage) {
-        updated[usageKey] = maskDigits(usage);
-      }
-      if (usageKey && updated[usageKey]) {
-        updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
-      }
-      if (partnerKey && updated[partnerKey]) {
-        updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
-      }
-      return updated;
-    }
-
-    if (type === 'uberweisung') {
-      if (usageKey && usage) {
-        updated[usageKey] = maskDigits(usage);
-      }
-
-      if (partnerKey && partner && isLikelyPersonName(partner)) {
-        const lastName = getLastName(partner);
-        if (lastName) {
-          if (usageKey && updated[usageKey]) {
-            updated[usageKey] = maskName(updated[usageKey], lastName);
-          }
-          updated[partnerKey] = maskName(partner, lastName);
+    if ((isTransfer || isTopUp) && partnerKey && partnerIsPerson) {
+      const lastName = getLastName(partner);
+      if (lastName) {
+        if (usageKey && updated[usageKey]) {
+          updated[usageKey] = maskName(updated[usageKey], lastName);
         }
+        updated[partnerKey] = maskName(partner, lastName);
       }
+    } else if (partnerKey && partner) {
+      updated[partnerKey] = partner;
+    }
 
+    if (usageEqualsPartner && !partnerIsPerson) {
+      if (!(isTransfer || isTopUp)) {
+        return { ...row };
+      }
+      if (partnerKey) {
+        updated[partnerKey] = row[partnerKey];
+      }
+    }
+
+    if (!(usageEqualsPartner && !partnerIsPerson)) {
       if (usageKey && updated[usageKey]) {
         updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
       }
       if (partnerKey && updated[partnerKey]) {
         updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
       }
-      return updated;
-    }
-
-    if (type === 'aufladung') {
-      if (usageKey && usage) {
-        updated[usageKey] = maskDigits(usage);
-      }
-
-      if (partnerKey && partner && isLikelyPersonName(partner)) {
-        const lastName = getLastName(partner);
-        if (lastName) {
-          if (usageKey && updated[usageKey]) {
-            updated[usageKey] = maskName(updated[usageKey], lastName);
-          }
-          updated[partnerKey] = maskName(partner, lastName);
-        }
-      }
-
-      if (usageKey && updated[usageKey]) {
-        updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
-      }
-      if (partnerKey && updated[partnerKey]) {
-        updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
-      }
-      return updated;
-    }
-
-    if (usageKey && updated[usageKey]) {
+    } else if ((isTransfer || isTopUp) && usageKey && updated[usageKey]) {
       updated[usageKey] = maskKnownLastNames(updated[usageKey], knownPrivateLastNames);
-    }
-    if (partnerKey && updated[partnerKey]) {
-      updated[partnerKey] = maskKnownLastNames(updated[partnerKey], knownPrivateLastNames);
     }
 
     return updated;

@@ -103,6 +103,21 @@ test('anonymize masks digits for transfers to companies', () => {
   assert.strictEqual(result.Zahlungspartner, 'Supermarkt GmbH');
 });
 
+test('anonymize masks digits in usage for transfers even when identical to partner', () => {
+  const rows = [
+    {
+      Type: 'Überweisung',
+      Verwendungszweck: 'ACME 12345',
+      Zahlungspartner: 'ACME 12345',
+    },
+  ];
+
+  const [result] = anonymize(rows);
+
+  assert.strictEqual(result.Verwendungszweck, 'ACME XXX');
+  assert.strictEqual(result.Zahlungspartner, 'ACME 12345');
+});
+
 test('anonymize keeps identical usage and partner text for companies', () => {
   const rows = [
     {
