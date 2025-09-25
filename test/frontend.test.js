@@ -50,18 +50,86 @@ test('mergeTransactions keeps original order when date comparison ties', () => {
   assert.deepStrictEqual(merged, rows);
 });
 
-test('anonymize masks long numbers and simple names in Verwendungszweck', () => {
+test('anonymize leaves clearing transactions untouched', () => {
   const rows = [
-    { Verwendungszweck: 'Überweisung an Max Mustermann 123456789' },
-    { Verwendungszweck: 'Kartenzahlung Supermarkt 9876' },
+    { Type: 'Clearing', Verwendungszweck: 'Keine Änderung', Zahlungspartner: 'ACME GmbH' },
+  ];
+
+  const [result] = anonymize(rows);
+
+  assert.deepStrictEqual(result, rows[0]);
+});
+
+test('anonymize replaces digit sequences for Lastschrift and Rücklastschrift', () => {
+  const rows = [
+    { Type: 'Lastschrift', Verwendungszweck: 'Rechnung 12345', Zahlungspartner: 'ACME GmbH' },
+    { Type: 'Rücklastschrift', Verwendungszweck: 'Rückgabe 42-987', Zahlungspartner: 'Bank' },
   ];
 
   const anonymized = anonymize(rows);
 
-  assert.deepStrictEqual(anonymized, [
-    { Verwendungszweck: 'Überweisung an XXX XXX ***' },
-    { Verwendungszweck: 'XXX XXX ***' },
-  ]);
+  assert.strictEqual(anonymized[0].Verwendungszweck, 'Rechnung XXX');
+  assert.strictEqual(anonymized[0].Zahlungspartner, 'ACME GmbH');
+  assert.strictEqual(anonymized[1].Verwendungszweck, 'Rückgabe XXX-XXX');
+});
+
+test('anonymize masks last names for transfers to private persons', () => {
+  const rows = [
+    {
+      Type: 'Überweisung',
+      Verwendungszweck: 'Miete für Max Mustermann',
+      Zahlungspartner: 'Max Mustermann',
+    },
+  ];
+
+  const [result] = anonymize(rows);
+
+  assert.strictEqual(result.Verwendungszweck, 'Miete für Max XXX');
+  assert.strictEqual(result.Zahlungspartner, 'Max XXX');
+});
+
+test('anonymize masks digits for transfers to companies', () => {
+  const rows = [
+    {
+      Type: 'Überweisung',
+      Verwendungszweck: 'Rechnung 998877',
+      Zahlungspartner: 'Supermarkt GmbH',
+    },
+  ];
+
+  const [result] = anonymize(rows);
+
+  assert.strictEqual(result.Verwendungszweck, 'Rechnung XXX');
+  assert.strictEqual(result.Zahlungspartner, 'Supermarkt GmbH');
+});
+
+test('anonymize keeps identical usage and partner text for companies', () => {
+  const rows = [
+    {
+      Type: 'Lastschrift',
+      Verwendungszweck: 'SPOTIFY AB',
+      Zahlungspartner: 'SPOTIFY AB',
+    },
+  ];
+
+  const [result] = anonymize(rows);
+
+  assert.deepStrictEqual(result, rows[0]);
+});
+
+test('anonymize masks last names for top-ups from private persons', () => {
+  const rows = [
+    {
+      Type: 'Aufladung',
+      Verwendungszweck: 'Aufladung Anna Lena Meier',
+      Zahlungspartner: 'ANNA LENA MEIER',
+    },
+  ];
+
+  const [result] = anonymize(rows);
+
+  assert.strictEqual(result.Verwendungszweck, 'Aufladung Anna Lena XXX');
+  assert.strictEqual(result.Zahlungspartner, 'ANNA LENA XXX');
 });
 
 test('parseDateString handles german and iso formats and ignores invalid', () => {
