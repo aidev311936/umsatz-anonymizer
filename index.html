@@ -1,21 +1,12 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
-<head>
-  <meta charset="UTF-8">
-  <title>Umsatz‑Pseudonymisierung</title>
-  <style>
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 4px; }
-  </style>
-</head>
-<body>
-  <h1>CSV‑Umsätze pseudonymisieren</h1>
-  <input type="file" id="csvFile" accept=".csv" multiple />
-  <button id="anonymizeBtn" disabled>Pseudonymisieren</button>
-  <button id="categorizeBtn" disabled>Kategorisieren</button>
-  <div id="tableContainer"></div>
-
-  <!-- Cache busting: Append version parameter to ensure browsers load latest JS -->
-  <script src="app.js?v=20250917"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Umsatz Anonymizer</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
