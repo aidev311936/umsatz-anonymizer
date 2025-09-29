@@ -1,2 +1,8 @@
-node_modules/
-*.log
+node_modules
+.dist
+.vscode
+dist
+dist-tests
+.DS_Store
+npm-debug.log*
+.idea

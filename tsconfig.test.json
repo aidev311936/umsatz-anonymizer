@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-tests",
+    "module": "CommonJS",
+    "target": "ES2019",
+    "jsx": "react",
+    "lib": ["ES2019", "DOM"],
+    "types": ["node"],
+    "isolatedModules": false
+  },
+  "include": ["src/lib/**/*.ts", "src/utils/**/*.ts", "tests/**/*.ts"]
+}
