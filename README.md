@@ -21,6 +21,16 @@ npm run dev
 
 Der Entwicklungsserver startet standardmäßig unter <http://localhost:5173>.
 
+## Produktion & Deployment
+
+```bash
+npm run build
+```
+
+Der Befehl erzeugt ein statisches Produktions-Bundle im Ordner `dist/`, das von jedem beliebigen Static-File-Host (z. B. GitHub Pages) bedient werden kann. Der bereitgestellte GitHub-Actions-Workflow `Deploy to GitHub Pages` baut das Projekt bei jedem Push auf den `main`-Branch, lädt das `dist/`-Artefakt hoch und veröffentlicht es über GitHub Pages.
+
+Nach erfolgreicher Bereitstellung lädt die ausgelieferte Seite die kompilierten Assets aus `dist/assets/…` – ein direkter Verweis auf `/src/main.tsx` wird nicht mehr benötigt.
+
 ## Tests
 
 ```bash
