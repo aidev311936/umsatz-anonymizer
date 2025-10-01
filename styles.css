@@ -37,6 +37,7 @@ label {
 }
 
 input[type="text"],
+input[type="number"],
 select,
 button {
   font: inherit;
@@ -48,6 +49,18 @@ input[type="text"] {
   border-radius: 8px;
   border: 1px solid #ccc;
   margin-bottom: 0.75rem;
+}
+
+input[type="number"] {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  margin-bottom: 0.75rem;
+}
+
+input[type="range"] {
+  width: 100%;
 }
 
 input[type="file"] {
@@ -82,6 +95,90 @@ select[multiple] {
   flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1rem;
+}
+
+.rules-info {
+  font-size: 0.95rem;
+  color: #555;
+  margin-bottom: 1rem;
+}
+
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.rules-empty {
+  font-style: italic;
+  color: #666;
+}
+
+.rule-card {
+  border: 1px solid #d9e2ff;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #f6f8ff;
+}
+
+.rule-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.rule-field {
+  margin-bottom: 0.75rem;
+}
+
+.rule-field label {
+  margin-bottom: 0.35rem;
+}
+
+.rule-field input,
+.rule-field select {
+  margin-bottom: 0;
+}
+
+.rule-field-inline {
+  flex: 1;
+  min-width: 180px;
+}
+
+.rule-field-inline input {
+  margin-bottom: 0;
+}
+
+.rule-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.rule-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.rule-remove-button {
+  background: #e53935;
+}
+
+.rule-remove-button:hover {
+  background: #c62828;
+}
+
+.rules-add-button {
+  margin-top: 1rem;
+  align-self: flex-start;
+}
+
+.rule-range-value {
+  margin-left: 0.5rem;
+  font-family: monospace;
 }
 
 button {
@@ -168,6 +265,7 @@ tbody tr:nth-child(odd) {
   }
 
   input[type="text"],
+  input[type="number"],
   select[multiple] {
     background: #121212;
     color: inherit;
@@ -184,5 +282,26 @@ tbody tr:nth-child(odd) {
 
   tbody tr:nth-child(odd) {
     background: #181818;
+  }
+
+  .rules-info {
+    color: #b0bec5;
+  }
+
+  .rules-empty {
+    color: #9e9e9e;
+  }
+
+  .rule-card {
+    background: #1f2937;
+    border-color: #2d3a5c;
+  }
+
+  .rule-remove-button {
+    background: #ef5350;
+  }
+
+  .rule-remove-button:hover {
+    background: #e53935;
   }
 }

@@ -10,9 +10,11 @@ import {
   loadMaskedTransactions,
   loadTransactions,
   saveBankMapping,
+  saveAnonymizationRules,
   saveMaskedTransactions,
 } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
+import { buildRulesUI, RulesUIController } from "./rulesUI.js";
 import { BankMapping, UnifiedTx } from "./types.js";
 
 type MappingSelection = Record<Exclude<keyof BankMapping, "bank_name">, string[]>;
@@ -26,8 +28,11 @@ const statusArea = document.getElementById("statusArea");
 const tableBody = document.getElementById("transactionsBody") as HTMLTableSectionElement | null;
 const anonymizeButton = document.getElementById("anonymizeButton") as HTMLButtonElement | null;
 const saveMaskedButton = document.getElementById("saveMaskedButton") as HTMLButtonElement | null;
+const rulesContainer = document.getElementById("rulesContainer");
+const saveRulesButton = document.getElementById("saveRulesButton") as HTMLButtonElement | null;
 
 let mappingController: MappingUIController | null = null;
+let rulesController: RulesUIController | null = null;
 let detectedHeader: HeaderDetectionResult | null = null;
 let transactions: UnifiedTx[] = [];
 let anonymizedActive = false;
@@ -50,6 +55,8 @@ const ensuredStatusArea = assertElement(statusArea, "Statusbereich fehlt");
 const ensuredTableBody = assertElement(tableBody, "Tabellenkörper fehlt");
 const ensuredAnonymizeButton = assertElement(anonymizeButton, "Anonymisieren Button fehlt");
 const ensuredSaveMaskedButton = assertElement(saveMaskedButton, "Speichern Button fehlt");
+const ensuredRulesContainer = assertElement(rulesContainer, "Regel-Container fehlt");
+const ensuredSaveRulesButton = assertElement(saveRulesButton, "Regel speichern Button fehlt");
 
 type StatusType = "info" | "error" | "warning";
 
@@ -261,6 +268,28 @@ function handleSaveMaskedCopy(): void {
   setStatus("Anonymisierte Kopie gespeichert.", "info");
 }
 
+function handleSaveRules(): void {
+  if (!rulesController) {
+    return;
+  }
+  const rules = rulesController.getRules();
+  saveAnonymizationRules(rules);
+
+  if (anonymizedActive) {
+    const result = applyAnonymization(transactions, rules);
+    anonymizedCache = result.data;
+    lastAnonymizationWarnings = result.warnings;
+    renderTransactions(anonymizedCache);
+    if (lastAnonymizationWarnings.length > 0) {
+      setStatus(`Regeln gespeichert. ${lastAnonymizationWarnings.join(" ")}`, "warning");
+    } else {
+      setStatus("Regeln gespeichert und anonymisierte Ansicht aktualisiert.", "info");
+    }
+  } else {
+    setStatus("Anonymisierungsregeln gespeichert.", "info");
+  }
+}
+
 function init(): void {
   transactions = loadTransactions();
   renderTransactions(transactions);
@@ -293,6 +322,15 @@ function init(): void {
   ensuredSaveMaskedButton.addEventListener("click", (event) => {
     event.preventDefault();
     handleSaveMaskedCopy();
+  });
+
+  rulesController = buildRulesUI(ensuredRulesContainer);
+  const { rules } = loadAnonymizationRules();
+  rulesController.setRules(rules);
+
+  ensuredSaveRulesButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleSaveRules();
   });
 }
 

@@ -22,6 +22,7 @@ export type AnonRule =
       pattern: string;
       flags?: string;
       replacement: string;
+      enabled?: boolean;
     }
   | {
       id: string;
@@ -31,4 +32,5 @@ export type AnonRule =
       maskChar?: string;
       minLen?: number;
       maskPercent?: number;
+      enabled?: boolean;
     };

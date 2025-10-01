@@ -2,6 +2,7 @@ const BANK_MAPPINGS_KEY = "bank_mappings_v1";
 const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
+const CURRENT_RULE_VERSION = 2;
 function isStringArray(value) {
     return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
@@ -101,35 +102,51 @@ function isAnonRule(value) {
     return false;
 }
 const DEFAULT_RULES = {
-    version: 1,
+    version: CURRENT_RULE_VERSION,
     rules: [
         {
             id: "iban_mask",
             fields: ["booking_text"],
             type: "regex",
-            pattern: "(?:DE\\d{2}\\s?(?:\\d\\s?){18})",
+            pattern: "(DE\\d{2})[\\s-]?((?:\\d[\\s-]?){18})",
             flags: "gi",
-            replacement: "DE•• •••• •••• •••• •••• ••",
+            replacement: "$1 XXXX XXXX XXXX XXXX XX",
+            enabled: true,
         },
         {
-            id: "card_mask",
+            id: "digits_mask",
             fields: ["booking_text"],
             type: "regex",
-            pattern: "\\b(?:\\d[ -]?){12,19}\\b",
+            pattern: "\\d{3,}",
             flags: "g",
-            replacement: "•••• •••• •••• ••••",
-        },
-        {
-            id: "name_mask",
-            fields: ["booking_text", "booking_type"],
-            type: "mask",
-            maskStrategy: "keepFirstLast",
-            minLen: 4,
-            maskChar: "•",
-            maskPercent: 0.6,
+            replacement: "XXX",
+            enabled: true,
         },
     ],
 };
+function sanitizeRule(rule) {
+    if (rule.type === "regex") {
+        return {
+            id: rule.id,
+            type: "regex",
+            pattern: rule.pattern,
+            flags: rule.flags,
+            replacement: rule.replacement,
+            fields: ["booking_text"],
+            enabled: rule.enabled !== false ? true : false,
+        };
+    }
+    return {
+        id: rule.id,
+        type: "mask",
+        maskStrategy: rule.maskStrategy,
+        maskChar: rule.maskChar,
+        minLen: rule.minLen,
+        maskPercent: rule.maskPercent,
+        fields: ["booking_text"],
+        enabled: rule.enabled !== false ? true : false,
+    };
+}
 export function loadAnonymizationRules() {
     const parsed = safeParse(localStorage.getItem(ANON_RULES_KEY));
     if (parsed &&
@@ -137,13 +154,19 @@ export function loadAnonymizationRules() {
         parsed !== null &&
         "rules" in parsed &&
         Array.isArray(parsed.rules)) {
-        const rules = parsed.rules.filter(isAnonRule);
-        const version = typeof parsed.version === "number" ? parsed.version : 1;
+        const rules = parsed.rules.filter(isAnonRule).map(sanitizeRule);
+        const version = typeof parsed.version === "number"
+            ? parsed.version
+            : CURRENT_RULE_VERSION;
         return { rules, version };
     }
     localStorage.setItem(ANON_RULES_KEY, JSON.stringify(DEFAULT_RULES, null, 2));
     return DEFAULT_RULES;
 }
-export function saveAnonymizationRules(payload) {
-    localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+export function saveAnonymizationRules(rules) {
+    const sanitized = {
+        version: CURRENT_RULE_VERSION,
+        rules: rules.map(sanitizeRule),
+    };
+    localStorage.setItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
 }
