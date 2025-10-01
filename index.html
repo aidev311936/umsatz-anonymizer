@@ -1,21 +1,63 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
-<head>
-  <meta charset="UTF-8">
-  <title>Umsatz‑Pseudonymisierung</title>
-  <style>
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 4px; }
-  </style>
-</head>
-<body>
-  <h1>CSV‑Umsätze pseudonymisieren</h1>
-  <input type="file" id="csvFile" accept=".csv" multiple />
-  <button id="anonymizeBtn" disabled>Pseudonymisieren</button>
-  <button id="categorizeBtn" disabled>Kategorisieren</button>
-  <div id="tableContainer"></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Umsatz Anonymizer</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" defer></script>
+    <script type="module" src="./dist/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>Umsätze importieren &amp; anonymisieren</h1>
 
-  <!-- Cache busting: Append version parameter to ensure browsers load latest JS -->
-  <script src="app.js?v=20250917"></script>
-</body>
+      <section>
+        <h2>CSV-Import</h2>
+        <label for="csvInput">CSV wählen</label>
+        <input id="csvInput" type="file" accept=".csv,text/csv" />
+        <label for="bankName">Bankname</label>
+        <input id="bankName" type="text" placeholder="z. B. comdirect" />
+      </section>
+
+      <section>
+        <h2>Mapping auf Zielschema</h2>
+        <div id="mappingContainer"></div>
+        <div class="button-row">
+          <button id="saveMappingButton" type="button">Mapping speichern</button>
+          <button id="importButton" type="button">Import starten</button>
+        </div>
+        <div id="statusArea" data-status="info"></div>
+      </section>
+
+      <section>
+        <h2>Anonymisierungsregeln</h2>
+        <p class="hint">Regeln wirken ausschließlich auf den Buchungstext.</p>
+        <div id="anonRulesContainer"></div>
+        <div class="button-row">
+          <button id="addAnonRuleButton" type="button">Regel hinzufügen</button>
+          <button id="saveAnonRulesButton" type="button">Regeln speichern</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Übersicht</h2>
+        <div class="button-row">
+          <button id="anonymizeButton" type="button">Anonymisieren</button>
+          <button id="saveMaskedButton" type="button" disabled>Anonymisierte Kopie speichern</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Buchungstag</th>
+              <th>Buchungstext</th>
+              <th>Vorgang</th>
+              <th>Betrag</th>
+            </tr>
+          </thead>
+          <tbody id="transactionsBody"></tbody>
+        </table>
+      </section>
+    </main>
+  </body>
 </html>
