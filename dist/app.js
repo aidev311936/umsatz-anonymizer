@@ -24,6 +24,13 @@ let transactions = [];
 let anonymizedActive = false;
 let anonymizedCache = [];
 let lastAnonymizationWarnings = [];
+function getConfiguredRules() {
+    if (rulesController) {
+        return rulesController.getRules();
+    }
+    const { rules } = loadAnonymizationRules();
+    return rules;
+}
 function assertElement(value, message) {
     if (!value) {
         throw new Error(message);
@@ -202,7 +209,7 @@ function handleToggleAnonymization() {
         return;
     }
     if (!anonymizedActive) {
-        const { rules } = loadAnonymizationRules();
+        const rules = getConfiguredRules();
         const result = applyAnonymization(transactions, rules);
         anonymizedCache = result.data;
         lastAnonymizationWarnings = result.warnings;

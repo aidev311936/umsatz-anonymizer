@@ -15,7 +15,7 @@ import {
 } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI, RulesUIController } from "./rulesUI.js";
-import { BankMapping, UnifiedTx } from "./types.js";
+import { AnonRule, BankMapping, UnifiedTx } from "./types.js";
 
 type MappingSelection = Record<Exclude<keyof BankMapping, "bank_name">, string[]>;
 
@@ -38,6 +38,14 @@ let transactions: UnifiedTx[] = [];
 let anonymizedActive = false;
 let anonymizedCache: UnifiedTx[] = [];
 let lastAnonymizationWarnings: string[] = [];
+
+function getConfiguredRules(): AnonRule[] {
+  if (rulesController) {
+    return rulesController.getRules();
+  }
+  const { rules } = loadAnonymizationRules();
+  return rules;
+}
 
 function assertElement<T extends HTMLElement>(value: T | null, message: string): T {
   if (!value) {
@@ -233,7 +241,7 @@ function handleToggleAnonymization(): void {
     return;
   }
   if (!anonymizedActive) {
-    const { rules } = loadAnonymizationRules();
+    const rules = getConfiguredRules();
     const result = applyAnonymization(transactions, rules);
     anonymizedCache = result.data;
     lastAnonymizationWarnings = result.warnings;
