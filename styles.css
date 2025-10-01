@@ -30,6 +30,47 @@ section {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+.collapsible-section {
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.collapsible-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 1.5rem;
+}
+
+.collapsible-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-section > summary h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.collapsible-section > summary::after {
+  content: "▼";
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.collapsible-section:not([open]) > summary::after {
+  content: "▶";
+}
+
+.collapsible-content {
+  border-top: 1px solid #e3e8ef;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
 label {
   display: block;
   font-weight: 600;
@@ -117,8 +158,9 @@ select[multiple] {
 .rule-card {
   border: 1px solid #d9e2ff;
   border-radius: 12px;
-  padding: 1rem;
   background: #f6f8ff;
+  display: flex;
+  flex-direction: column;
 }
 
 .rule-card-header {
@@ -126,7 +168,52 @@ select[multiple] {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.rule-collapse-toggle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.1rem;
+}
+
+.rule-collapse-toggle:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.rule-name-display {
+  font-weight: 600;
+  cursor: pointer;
+  flex: 1;
+  min-width: 180px;
+}
+
+.rule-card-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+.rule-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rule-card-body {
+  border-top: 1px solid #d9e2ff;
+  padding: 0 1rem 1rem;
+}
+
+.rule-card.rule-card-collapsed .rule-card-body {
+  display: none;
 }
 
 .rule-field {
@@ -163,6 +250,14 @@ select[multiple] {
   margin: 0;
 }
 
+.rule-apply-button {
+  background: #4caf50;
+}
+
+.rule-apply-button:hover {
+  background: #2e7d32;
+}
+
 .rule-remove-button {
   background: #e53935;
 }
@@ -181,7 +276,7 @@ select[multiple] {
   font-family: monospace;
 }
 
-button {
+button:not(.rule-collapse-toggle) {
   padding: 0.6rem 1rem;
   border-radius: 999px;
   border: none;
@@ -191,12 +286,12 @@ button {
   transition: background 0.2s ease;
 }
 
-button:disabled {
+button:not(.rule-collapse-toggle):disabled {
   background: #ccc;
   cursor: not-allowed;
 }
 
-button:hover:not(:disabled) {
+button:not(.rule-collapse-toggle):hover:not(:disabled) {
   background: #075ec7;
 }
 
@@ -264,6 +359,19 @@ tbody tr:nth-child(odd) {
     box-shadow: none;
   }
 
+  .collapsible-section {
+    background: #1c1c1c;
+    box-shadow: none;
+  }
+
+  .collapsible-content {
+    border-color: #2a2a2a;
+  }
+
+  .collapsible-section > summary::after {
+    color: #9e9e9e;
+  }
+
   input[type="text"],
   input[type="number"],
   select[multiple] {
@@ -295,6 +403,22 @@ tbody tr:nth-child(odd) {
   .rule-card {
     background: #1f2937;
     border-color: #2d3a5c;
+  }
+
+  .rule-card-body {
+    border-color: #2d3a5c;
+  }
+
+  .rule-collapse-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .rule-apply-button {
+    background: #43a047;
+  }
+
+  .rule-apply-button:hover {
+    background: #2e7d32;
   }
 
   .rule-remove-button {

@@ -149,6 +149,7 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
   container.appendChild(addButton);
 
   const state: AnonRule[] = [];
+  const openStates = new Map<string, boolean>();
 
   function notifyChange(): void {
     const event = new CustomEvent<AnonRule[]>("ruleschange", {
@@ -158,15 +159,35 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
   }
 
   function updateRule(index: number, updater: (rule: AnonRule) => AnonRule): void {
+    const previousId = state[index].id;
     state[index] = cloneRule(updater(state[index]));
+    const nextId = state[index].id;
+    if (previousId !== nextId) {
+      const wasExpanded = openStates.get(previousId);
+      openStates.delete(previousId);
+      if (wasExpanded !== undefined) {
+        openStates.set(nextId, wasExpanded);
+      }
+    }
     render();
     notifyChange();
   }
 
   function removeRule(index: number): void {
-    state.splice(index, 1);
+    const removed = state.splice(index, 1)[0];
+    if (removed) {
+      openStates.delete(removed.id);
+    }
     render();
     notifyChange();
+  }
+
+  function dispatchApplyRule(rule: AnonRule): void {
+    const event = new CustomEvent<AnonRule>("ruleapply", {
+      detail: cloneRule(rule),
+      bubbles: true,
+    });
+    container.dispatchEvent(event);
   }
 
   function render(): void {
@@ -183,14 +204,40 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
     state.forEach((rule, index) => {
       const card = document.createElement("div");
       card.className = "rule-card";
+      card.dataset.ruleId = rule.id;
+
+      if (!openStates.has(rule.id)) {
+        openStates.set(rule.id, true);
+      }
+
+      const expanded = openStates.get(rule.id) !== false;
+      if (!expanded) {
+        card.classList.add("rule-card-collapsed");
+      }
 
       const header = document.createElement("div");
       header.className = "rule-card-header";
 
-      const idField = createTextInput("Name", rule.id, (value) => {
-        updateRule(index, (current) => ({ ...current, id: value.trim() || current.id }));
+      const toggleButton = document.createElement("button");
+      toggleButton.type = "button";
+      toggleButton.className = "rule-collapse-toggle";
+      toggleButton.setAttribute("aria-expanded", String(expanded));
+      toggleButton.textContent = expanded ? "▼" : "▶";
+      toggleButton.addEventListener("click", () => {
+        const isCollapsed = card.classList.toggle("rule-card-collapsed");
+        const isExpanded = !isCollapsed;
+        openStates.set(rule.id, isExpanded);
+        toggleButton.textContent = isExpanded ? "▼" : "▶";
+        toggleButton.setAttribute("aria-expanded", String(isExpanded));
       });
-      idField.classList.add("rule-field-inline");
+
+      const nameDisplay = document.createElement("span");
+      nameDisplay.className = "rule-name-display";
+      nameDisplay.textContent = rule.id;
+      nameDisplay.title = "Regel ein- oder ausklappen";
+      nameDisplay.addEventListener("click", () => {
+        toggleButton.click();
+      });
 
       const enabledWrapper = document.createElement("label");
       enabledWrapper.className = "rule-toggle";
@@ -205,16 +252,44 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
       enabledWrapper.appendChild(enabledCheckbox);
       enabledWrapper.appendChild(enabledText);
 
+      const actions = document.createElement("div");
+      actions.className = "rule-card-actions";
+
+      const applyButton = document.createElement("button");
+      applyButton.type = "button";
+      applyButton.className = "rule-apply-button";
+      applyButton.textContent = "Regel anwenden";
+      applyButton.addEventListener("click", () => {
+        dispatchApplyRule(rule);
+      });
+
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.className = "rule-remove-button";
       removeButton.textContent = "Regel entfernen";
       removeButton.addEventListener("click", () => removeRule(index));
 
-      header.appendChild(idField);
-      header.appendChild(enabledWrapper);
-      header.appendChild(removeButton);
+      actions.appendChild(applyButton);
+      actions.appendChild(removeButton);
+
+      const controls = document.createElement("div");
+      controls.className = "rule-card-controls";
+      controls.appendChild(enabledWrapper);
+      controls.appendChild(actions);
+
+      header.appendChild(toggleButton);
+      header.appendChild(nameDisplay);
+      header.appendChild(controls);
       card.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "rule-card-body";
+
+      const idField = createTextInput("Name", rule.id, (value) => {
+        updateRule(index, (current) => ({ ...current, id: value.trim() || current.id }));
+      });
+      idField.classList.add("rule-field-inline");
+      body.appendChild(idField);
 
       const typeWrapper = document.createElement("div");
       typeWrapper.className = "rule-field";
@@ -258,20 +333,20 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
       });
       typeWrapper.appendChild(typeLabel);
       typeWrapper.appendChild(typeSelect);
-      card.appendChild(typeWrapper);
+      body.appendChild(typeWrapper);
 
       if (rule.type === "regex") {
-        card.appendChild(
+        body.appendChild(
           createTextInput("Regulärer Ausdruck", rule.pattern, (value) => {
             updateRule(index, (current) => ({ ...current, pattern: value }));
           })
         );
-        card.appendChild(
+        body.appendChild(
           createTextInput("Ersetzung", rule.replacement, (value) => {
             updateRule(index, (current) => ({ ...current, replacement: value }));
           })
         );
-        card.appendChild(
+        body.appendChild(
           createTextInput("Flags", rule.flags ?? "", (value) => {
             updateRule(index, (current) => ({ ...current, flags: value.trim() || undefined }));
           })
@@ -304,33 +379,36 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
         });
         strategyWrapper.appendChild(strategyLabel);
         strategyWrapper.appendChild(strategySelect);
-        card.appendChild(strategyWrapper);
+        body.appendChild(strategyWrapper);
 
-        card.appendChild(
+        body.appendChild(
           createTextInput("Masken-Zeichen", rule.maskChar ?? "", (value) => {
             updateRule(index, (current) => ({ ...current, maskChar: value || undefined }));
           })
         );
 
-        card.appendChild(
+        body.appendChild(
           createNumberInput("Mindestlänge", rule.minLen, (value) => {
             updateRule(index, (current) => ({ ...current, minLen: value }));
           }, { min: 0 })
         );
 
-        card.appendChild(
+        body.appendChild(
           createMaskPercentInput("Maskierungsanteil", rule.maskPercent, (value) => {
             updateRule(index, (current) => ({ ...current, maskPercent: value }));
           })
         );
       }
 
+      card.appendChild(body);
       list.appendChild(card);
     });
   }
 
   addButton.addEventListener("click", () => {
-    state.push(cloneRule(createDefaultRule()));
+    const newRule = cloneRule(createDefaultRule());
+    state.push(newRule);
+    openStates.set(newRule.id, true);
     render();
     notifyChange();
   });
@@ -343,6 +421,10 @@ export function buildRulesUI(container: HTMLElement): RulesUIController {
     },
     setRules(rules: AnonRule[]): void {
       state.splice(0, state.length, ...rules.map((rule) => cloneRule(rule)));
+      openStates.clear();
+      state.forEach((rule) => {
+        openStates.set(rule.id, true);
+      });
       render();
     },
   };
