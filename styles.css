@@ -124,7 +124,7 @@ button.secondary:hover:not(:disabled) {
   gap: 1rem;
 }
 
-.anon-rule {
+.anon-rule { 
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 1rem;
@@ -135,6 +135,13 @@ button.secondary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.anon-rule-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   margin-bottom: 0.75rem;
 }
 
