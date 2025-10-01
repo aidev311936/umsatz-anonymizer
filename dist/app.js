@@ -267,6 +267,26 @@ function handleSaveRules() {
         setStatus("Anonymisierungsregeln gespeichert.", "info");
     }
 }
+function handleApplySingleRule(rule) {
+    const baseData = anonymizedActive ? anonymizedCache : transactions;
+    if (baseData.length === 0) {
+        setStatus("Keine Daten zum Anwenden der Regel vorhanden.", "warning");
+        return;
+    }
+    const result = applyAnonymization(baseData, [rule]);
+    anonymizedCache = result.data;
+    anonymizedActive = true;
+    lastAnonymizationWarnings = result.warnings;
+    ensuredAnonymizeButton.textContent = "Original anzeigen";
+    ensuredSaveMaskedButton.disabled = anonymizedCache.length === 0;
+    renderTransactions(anonymizedCache);
+    if (lastAnonymizationWarnings.length > 0) {
+        setStatus(`Regel "${rule.id}" angewendet. ${lastAnonymizationWarnings.join(" ")}`, "warning");
+    }
+    else {
+        setStatus(`Regel "${rule.id}" angewendet.`, "info");
+    }
+}
 function init() {
     transactions = loadTransactions();
     renderTransactions(transactions);
@@ -301,6 +321,12 @@ function init() {
     rulesController = buildRulesUI(ensuredRulesContainer);
     const { rules } = loadAnonymizationRules();
     rulesController.setRules(rules);
+    ensuredRulesContainer.addEventListener("ruleapply", (event) => {
+        const customEvent = event;
+        if (customEvent.detail) {
+            handleApplySingleRule(customEvent.detail);
+        }
+    });
     ensuredSaveRulesButton.addEventListener("click", (event) => {
         event.preventDefault();
         handleSaveRules();

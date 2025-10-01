@@ -12,31 +12,43 @@
     <main>
       <h1>Umsätze importieren &amp; anonymisieren</h1>
 
-      <section>
-        <h2>CSV-Import</h2>
-        <label for="csvInput">CSV wählen</label>
-        <input id="csvInput" type="file" accept=".csv,text/csv" />
-        <label for="bankName">Bankname</label>
-        <input id="bankName" type="text" placeholder="z. B. comdirect" />
-      </section>
-
-      <section>
-        <h2>Mapping auf Zielschema</h2>
-        <div id="mappingContainer"></div>
-        <div class="button-row">
-          <button id="saveMappingButton" type="button">Mapping speichern</button>
-          <button id="importButton" type="button">Import starten</button>
+      <details class="collapsible-section" open>
+        <summary>
+          <h2>CSV-Import</h2>
+        </summary>
+        <div class="collapsible-content">
+          <label for="csvInput">CSV wählen</label>
+          <input id="csvInput" type="file" accept=".csv,text/csv" />
+          <label for="bankName">Bankname</label>
+          <input id="bankName" type="text" placeholder="z. B. comdirect" />
         </div>
-        <div id="statusArea" data-status="info"></div>
-      </section>
+      </details>
 
-      <section>
-        <h2>Anonymisierungsregeln</h2>
-        <div id="rulesContainer"></div>
-        <div class="button-row">
-          <button id="saveRulesButton" type="button">Regeln speichern</button>
+      <details class="collapsible-section" open>
+        <summary>
+          <h2>Mapping auf Zielschema</h2>
+        </summary>
+        <div class="collapsible-content">
+          <div id="mappingContainer"></div>
+          <div class="button-row">
+            <button id="saveMappingButton" type="button">Mapping speichern</button>
+            <button id="importButton" type="button">Import starten</button>
+          </div>
+          <div id="statusArea" data-status="info"></div>
         </div>
-      </section>
+      </details>
+
+      <details class="collapsible-section" open>
+        <summary>
+          <h2>Anonymisierungsregeln</h2>
+        </summary>
+        <div class="collapsible-content">
+          <div id="rulesContainer"></div>
+          <div class="button-row">
+            <button id="saveRulesButton" type="button">Regeln speichern</button>
+          </div>
+        </div>
+      </details>
 
       <section>
         <h2>Übersicht</h2>
