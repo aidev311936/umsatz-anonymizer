@@ -54,14 +54,23 @@ export function compileRules(rules) {
     const compiled = [];
     const warnings = [];
     rules.forEach((rule) => {
+        if (rule.enabled === false) {
+            return;
+        }
+        const fields = rule.fields.filter((field) => field === "booking_text");
+        if (fields.length === 0) {
+            return;
+        }
         if (rule.type === "regex") {
             try {
                 const regex = new RegExp(rule.pattern, rule.flags);
                 compiled.push({
-                    ...rule,
+                    id: rule.id,
                     type: "regex",
+                    fields,
                     regex,
                     replacement: rule.replacement,
+                    enabled: rule.enabled,
                 });
             }
             catch (error) {
@@ -70,7 +79,16 @@ export function compileRules(rules) {
             }
         }
         else if (rule.type === "mask") {
-            compiled.push(rule);
+            compiled.push({
+                id: rule.id,
+                type: "mask",
+                fields,
+                maskStrategy: rule.maskStrategy,
+                maskChar: rule.maskChar,
+                minLen: rule.minLen,
+                maskPercent: rule.maskPercent,
+                enabled: rule.enabled,
+            });
         }
     });
     return { compiled, warnings };

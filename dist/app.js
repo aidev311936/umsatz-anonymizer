@@ -3,8 +3,9 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveAnonymizationRules, saveMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
+import { buildRulesUI } from "./rulesUI.js";
 const fileInput = document.getElementById("csvInput");
 const bankNameInput = document.getElementById("bankName");
 const mappingContainer = document.getElementById("mappingContainer");
@@ -14,12 +15,22 @@ const statusArea = document.getElementById("statusArea");
 const tableBody = document.getElementById("transactionsBody");
 const anonymizeButton = document.getElementById("anonymizeButton");
 const saveMaskedButton = document.getElementById("saveMaskedButton");
+const rulesContainer = document.getElementById("rulesContainer");
+const saveRulesButton = document.getElementById("saveRulesButton");
 let mappingController = null;
+let rulesController = null;
 let detectedHeader = null;
 let transactions = [];
 let anonymizedActive = false;
 let anonymizedCache = [];
 let lastAnonymizationWarnings = [];
+function getConfiguredRules() {
+    if (rulesController) {
+        return rulesController.getRules();
+    }
+    const { rules } = loadAnonymizationRules();
+    return rules;
+}
 function assertElement(value, message) {
     if (!value) {
         throw new Error(message);
@@ -35,6 +46,8 @@ const ensuredStatusArea = assertElement(statusArea, "Statusbereich fehlt");
 const ensuredTableBody = assertElement(tableBody, "Tabellenkörper fehlt");
 const ensuredAnonymizeButton = assertElement(anonymizeButton, "Anonymisieren Button fehlt");
 const ensuredSaveMaskedButton = assertElement(saveMaskedButton, "Speichern Button fehlt");
+const ensuredRulesContainer = assertElement(rulesContainer, "Regel-Container fehlt");
+const ensuredSaveRulesButton = assertElement(saveRulesButton, "Regel speichern Button fehlt");
 function setStatus(message, type = "info") {
     ensuredStatusArea.textContent = message;
     ensuredStatusArea.setAttribute("data-status", type);
@@ -196,7 +209,7 @@ function handleToggleAnonymization() {
         return;
     }
     if (!anonymizedActive) {
-        const { rules } = loadAnonymizationRules();
+        const rules = getConfiguredRules();
         const result = applyAnonymization(transactions, rules);
         anonymizedCache = result.data;
         lastAnonymizationWarnings = result.warnings;
@@ -232,6 +245,28 @@ function handleSaveMaskedCopy() {
     saveMaskedTransactions(anonymizedCache);
     setStatus("Anonymisierte Kopie gespeichert.", "info");
 }
+function handleSaveRules() {
+    if (!rulesController) {
+        return;
+    }
+    const rules = rulesController.getRules();
+    saveAnonymizationRules(rules);
+    if (anonymizedActive) {
+        const result = applyAnonymization(transactions, rules);
+        anonymizedCache = result.data;
+        lastAnonymizationWarnings = result.warnings;
+        renderTransactions(anonymizedCache);
+        if (lastAnonymizationWarnings.length > 0) {
+            setStatus(`Regeln gespeichert. ${lastAnonymizationWarnings.join(" ")}`, "warning");
+        }
+        else {
+            setStatus("Regeln gespeichert und anonymisierte Ansicht aktualisiert.", "info");
+        }
+    }
+    else {
+        setStatus("Anonymisierungsregeln gespeichert.", "info");
+    }
+}
 function init() {
     transactions = loadTransactions();
     renderTransactions(transactions);
@@ -262,6 +297,13 @@ function init() {
     ensuredSaveMaskedButton.addEventListener("click", (event) => {
         event.preventDefault();
         handleSaveMaskedCopy();
+    });
+    rulesController = buildRulesUI(ensuredRulesContainer);
+    const { rules } = loadAnonymizationRules();
+    rulesController.setRules(rules);
+    ensuredSaveRulesButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleSaveRules();
     });
 }
 init();
