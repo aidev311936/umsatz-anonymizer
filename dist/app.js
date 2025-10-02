@@ -3,9 +3,10 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveAnonymizationRules, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
+import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
 const fileInput = document.getElementById("csvInput");
 const bankNameInput = document.getElementById("bankName");
 const mappingContainer = document.getElementById("mappingContainer");
@@ -120,20 +121,99 @@ function getCurrentMapping(bankName) {
         booking_text: mapping.booking_text,
         booking_type: mapping.booking_type,
         booking_amount: mapping.booking_amount,
+        booking_date_parse_format: mapping.booking_date_parse_format,
+        booking_date_display_format: mapping.booking_date_display_format,
     };
+}
+function describeMappingField(field) {
+    switch (field) {
+        case "booking_date":
+            return "Buchungsdatum";
+        case "booking_text":
+            return "Buchungstext";
+        case "booking_type":
+            return "Buchungsart";
+        case "booking_amount":
+            return "Betrag";
+        case "booking_date_parse_format":
+            return "Datumsformat (Import)";
+        case "booking_date_display_format":
+            return "Datumsformat (Anzeige)";
+        default:
+            return field;
+    }
 }
 function validateMapping(mapping) {
     const missing = [];
-    Object.keys(mapping).forEach((key) => {
-        if (key === "bank_name") {
-            return;
-        }
-        const value = mapping[key];
-        if (!Array.isArray(value) || value.length === 0) {
-            missing.push(key);
-        }
-    });
+    if (mapping.booking_date.length === 0) {
+        missing.push("booking_date");
+    }
+    if (mapping.booking_text.length === 0) {
+        missing.push("booking_text");
+    }
+    if (mapping.booking_type.length === 0) {
+        missing.push("booking_type");
+    }
+    if (mapping.booking_amount.length === 0) {
+        missing.push("booking_amount");
+    }
+    if (mapping.booking_date_parse_format.trim().length === 0) {
+        missing.push("booking_date_parse_format");
+    }
     return { valid: missing.length === 0, missing };
+}
+function reformatTransactionsForBank(mapping) {
+    const existing = loadTransactions();
+    if (existing.length === 0) {
+        return 0;
+    }
+    const parseFormat = mapping.booking_date_parse_format.trim();
+    const displayFormatRaw = mapping.booking_date_display_format.trim();
+    const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
+    let updated = 0;
+    const next = existing.map((tx) => {
+        if (tx.bank_name.toLowerCase() !== mapping.bank_name.toLowerCase()) {
+            return tx;
+        }
+        const rawSource = tx.booking_date_raw ?? tx.booking_date;
+        const normalizedRaw = rawSource ?? "";
+        let nextDisplay = normalizedRaw;
+        let nextIso = null;
+        if (parseFormat && normalizedRaw.length > 0) {
+            const parsed = parseDateWithFormat(normalizedRaw, parseFormat);
+            if (parsed) {
+                nextIso = parsed.toISOString();
+                const effectiveDisplay = displayFormat.length > 0 ? displayFormat : parseFormat;
+                nextDisplay = effectiveDisplay
+                    ? formatDateWithFormat(parsed, effectiveDisplay)
+                    : normalizedRaw;
+            }
+        }
+        if (!parseFormat) {
+            nextIso = null;
+            nextDisplay = normalizedRaw;
+        }
+        else if (nextIso === null) {
+            nextDisplay = normalizedRaw;
+        }
+        const needsUpdate = tx.booking_date_raw !== normalizedRaw ||
+            tx.booking_date !== nextDisplay ||
+            tx.booking_date_iso !== nextIso;
+        if (!needsUpdate) {
+            return tx;
+        }
+        updated += 1;
+        return {
+            ...tx,
+            booking_date_raw: normalizedRaw,
+            booking_date: nextDisplay,
+            booking_date_iso: nextIso,
+        };
+    });
+    if (updated > 0) {
+        saveTransactions(next);
+    }
+    return updated;
 }
 function handleSaveMapping() {
     const bankName = ensuredBankNameInput.value.trim();
@@ -148,11 +228,21 @@ function handleSaveMapping() {
     }
     const validation = validateMapping(mapping);
     if (!validation.valid) {
-        setStatus(`Folgende Zuordnungen fehlen: ${validation.missing.join(", ")}`, "warning");
+        const missingLabels = validation.missing.map(describeMappingField);
+        setStatus(`Folgende Zuordnungen fehlen: ${missingLabels.join(", ")}`, "warning");
         return;
     }
     saveBankMapping(mapping);
-    setStatus("Mapping gespeichert.", "info");
+    const updatedCount = reformatTransactionsForBank(mapping);
+    if (updatedCount > 0) {
+        transactions = loadTransactions();
+        resetAnonymizationState();
+        renderTransactions(transactions);
+        setStatus(`Mapping gespeichert. ${updatedCount} gespeicherte Umsätze aktualisiert.`, "info");
+    }
+    else {
+        setStatus("Mapping gespeichert.", "info");
+    }
 }
 function handleImport() {
     if (!detectedHeader || detectedHeader.header.length === 0) {
@@ -171,7 +261,8 @@ function handleImport() {
     }
     const validation = validateMapping(mapping);
     if (!validation.valid) {
-        setStatus(`Folgende Zuordnungen fehlen: ${validation.missing.join(", ")}`, "warning");
+        const missingLabels = validation.missing.map(describeMappingField);
+        setStatus(`Folgende Zuordnungen fehlen: ${missingLabels.join(", ")}`, "warning");
         return;
     }
     const rows = detectedHeader.dataRows;

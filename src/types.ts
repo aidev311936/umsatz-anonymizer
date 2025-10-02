@@ -4,11 +4,15 @@ export interface BankMapping {
   booking_text: string[];
   booking_type: string[];
   booking_amount: string[];
+  booking_date_parse_format: string;
+  booking_date_display_format: string;
 }
 
 export interface UnifiedTx {
   bank_name: string;
   booking_date: string;
+  booking_date_raw: string;
+  booking_date_iso: string | null;
   booking_text: string;
   booking_type: string;
   booking_amount: string;

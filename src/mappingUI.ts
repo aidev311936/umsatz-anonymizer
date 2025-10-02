@@ -1,22 +1,24 @@
 import { BankMapping } from "./types.js";
 
-export type TargetField = Exclude<keyof BankMapping, "bank_name">;
+type ColumnField = "booking_date" | "booking_text" | "booking_type" | "booking_amount";
+
+export type MappingResult = Omit<BankMapping, "bank_name">;
 
 export interface MappingUIController {
-  getMapping(): Record<TargetField, string[]>;
-  setMapping(mapping: Partial<Record<TargetField, string[]>>): void;
-  validate(): { valid: boolean; missing: TargetField[] };
+  getMapping(): MappingResult;
+  setMapping(mapping: Partial<MappingResult>): void;
+  validate(): { valid: boolean; missing: (keyof MappingResult)[] };
   clear(): void;
 }
 
-const TARGET_FIELDS: TargetField[] = [
+const TARGET_FIELDS: ColumnField[] = [
   "booking_date",
   "booking_text",
   "booking_type",
   "booking_amount",
 ];
 
-function createFieldLabel(field: TargetField): string {
+function createFieldLabel(field: ColumnField): string {
   switch (field) {
     case "booking_date":
       return "Buchungsdatum";
@@ -46,21 +48,26 @@ function dedupe(values: string[]): string[] {
 export function buildMappingUI(
   container: HTMLElement,
   headers: string[],
-  initialMapping?: Partial<Record<TargetField, string[]>>
+  initialMapping?: Partial<MappingResult>
 ): MappingUIController {
   container.innerHTML = "";
 
-  const state: Record<TargetField, string[]> = {
+  const state: MappingResult = {
     booking_date: [],
     booking_text: [],
     booking_type: [],
     booking_amount: [],
+    booking_date_parse_format: initialMapping?.booking_date_parse_format ?? "",
+    booking_date_display_format:
+      initialMapping?.booking_date_display_format ??
+      initialMapping?.booking_date_parse_format ??
+      "",
   };
 
   const entries: Record<
-    TargetField,
-    { field: TargetField; select: HTMLSelectElement; orderInput: HTMLInputElement }
-  > = {} as Record<TargetField, { field: TargetField; select: HTMLSelectElement; orderInput: HTMLInputElement }>;
+    ColumnField,
+    { field: ColumnField; select: HTMLSelectElement; orderInput: HTMLInputElement }
+  > = {} as Record<ColumnField, { field: ColumnField; select: HTMLSelectElement; orderInput: HTMLInputElement }>;
 
   function updateSelectOptions(select: HTMLSelectElement, values: string[]): void {
     Array.from(select.options).forEach((option) => {
@@ -72,7 +79,7 @@ export function buildMappingUI(
     orderInput.value = values.join(";");
   }
 
-  function updateUI(field: TargetField): void {
+  function updateUI(field: ColumnField): void {
     const entry = entries[field];
     if (!entry) {
       return;
@@ -98,9 +105,9 @@ export function buildMappingUI(
     });
   }
 
-  function setFieldValues(field: TargetField, values: string[]): void {
+  function setFieldValues(field: ColumnField, values: string[]): void {
     const normalized = dedupe(values.filter((value) => headers.includes(value)));
-    const affected = new Set<TargetField>();
+    const affected = new Set<ColumnField>();
     normalized.forEach((value) => {
       TARGET_FIELDS.forEach((other) => {
         if (other !== field) {
@@ -176,6 +183,45 @@ export function buildMappingUI(
     entries[field] = { field, select, orderInput };
   });
 
+  const dateSettings = document.createElement("div");
+  dateSettings.className = "mapping-date-settings";
+
+  const parseWrapper = document.createElement("div");
+  parseWrapper.className = "mapping-field";
+  const parseLabel = document.createElement("label");
+  parseLabel.textContent = "Datumsformat (Import):";
+  parseLabel.htmlFor = "booking-date-parse-format";
+  const parseInput = document.createElement("input");
+  parseInput.type = "text";
+  parseInput.id = "booking-date-parse-format";
+  parseInput.placeholder = "z. B. dd.MM.yyyy";
+  parseInput.value = state.booking_date_parse_format;
+  parseInput.addEventListener("input", () => {
+    state.booking_date_parse_format = parseInput.value;
+  });
+  parseWrapper.appendChild(parseLabel);
+  parseWrapper.appendChild(parseInput);
+
+  const displayWrapper = document.createElement("div");
+  displayWrapper.className = "mapping-field";
+  const displayLabel = document.createElement("label");
+  displayLabel.textContent = "Datumsformat (Anzeige):";
+  displayLabel.htmlFor = "booking-date-display-format";
+  const displayInput = document.createElement("input");
+  displayInput.type = "text";
+  displayInput.id = "booking-date-display-format";
+  displayInput.placeholder = "z. B. dd.MM.yyyy HH:mm:ss";
+  displayInput.value = state.booking_date_display_format;
+  displayInput.addEventListener("input", () => {
+    state.booking_date_display_format = displayInput.value;
+  });
+  displayWrapper.appendChild(displayLabel);
+  displayWrapper.appendChild(displayInput);
+
+  dateSettings.appendChild(parseWrapper);
+  dateSettings.appendChild(displayWrapper);
+  container.appendChild(dateSettings);
+
   syncDisabledOptions();
 
   if (initialMapping) {
@@ -185,18 +231,31 @@ export function buildMappingUI(
         setFieldValues(field, values);
       }
     });
+    if (typeof initialMapping.booking_date_parse_format === "string") {
+      state.booking_date_parse_format = initialMapping.booking_date_parse_format;
+      parseInput.value = initialMapping.booking_date_parse_format;
+    }
+    if (typeof initialMapping.booking_date_display_format === "string") {
+      state.booking_date_display_format = initialMapping.booking_date_display_format;
+      displayInput.value = initialMapping.booking_date_display_format;
+    }
   }
 
   return {
-    getMapping(): Record<TargetField, string[]> {
+    getMapping(): MappingResult {
+      const parseFormat = state.booking_date_parse_format.trim();
+      const displayFormatRaw = state.booking_date_display_format.trim();
+      const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
       return {
         booking_date: [...state.booking_date],
         booking_text: [...state.booking_text],
         booking_type: [...state.booking_type],
         booking_amount: [...state.booking_amount],
+        booking_date_parse_format: parseFormat,
+        booking_date_display_format: displayFormat,
       };
     },
-    setMapping(mapping: Partial<Record<TargetField, string[]>>) {
+    setMapping(mapping: Partial<MappingResult>) {
       TARGET_FIELDS.forEach((field) => {
         const values = mapping[field];
         if (values) {
@@ -205,9 +264,27 @@ export function buildMappingUI(
           setFieldValues(field, []);
         }
       });
+      const parseValue =
+        typeof mapping.booking_date_parse_format === "string"
+          ? mapping.booking_date_parse_format
+          : "";
+      state.booking_date_parse_format = parseValue;
+      parseInput.value = parseValue;
+
+      const displayValue =
+        typeof mapping.booking_date_display_format === "string"
+          ? mapping.booking_date_display_format
+          : parseValue;
+      state.booking_date_display_format = displayValue;
+      displayInput.value = displayValue;
     },
     validate() {
-      const missing = TARGET_FIELDS.filter((field) => state[field].length === 0);
+      const missing: (keyof MappingResult)[] = TARGET_FIELDS.filter(
+        (field) => state[field].length === 0
+      );
+      if (state.booking_date_parse_format.trim().length === 0) {
+        missing.push("booking_date_parse_format");
+      }
       return { valid: missing.length === 0, missing };
     },
     clear() {
@@ -215,6 +292,10 @@ export function buildMappingUI(
         state[field] = [];
         updateUI(field);
       });
+      state.booking_date_parse_format = "";
+      state.booking_date_display_format = "";
+      parseInput.value = "";
+      displayInput.value = "";
       syncDisabledOptions();
     },
   };

@@ -131,6 +131,12 @@ select[multiple] {
   font-family: monospace;
 }
 
+.mapping-date-settings {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
