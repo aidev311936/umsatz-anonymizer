@@ -3,11 +3,14 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
-import { formatTransactionsForDisplay, sanitizeDisplaySettings } from "./displaySettings.js";
+import { formatBookingAmount, formatTransactionsForDisplay, sanitizeDisplaySettings, } from "./displaySettings.js";
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
+const CONFIG_MAPPING_KEY = "mapping_to_target_schema";
+const CONFIG_DISPLAY_KEY = "display_settings";
+const CONFIG_RULES_KEY = "anonymization_rules";
 const fileInput = document.getElementById("csvInput");
 const bankNameInput = document.getElementById("bankName");
 const mappingContainer = document.getElementById("mappingContainer");
@@ -22,6 +25,10 @@ const saveRulesButton = document.getElementById("saveRulesButton");
 const dateDisplayFormatInput = document.getElementById("dateDisplayFormat");
 const amountDisplayFormatInput = document.getElementById("amountDisplayFormat");
 const applyDisplaySettingsButton = document.getElementById("applyDisplaySettingsButton");
+const downloadMaskedButton = document.getElementById("downloadMaskedButton");
+const exportConfigButton = document.getElementById("exportConfigButton");
+const importConfigButton = document.getElementById("importConfigButton");
+const configImportInput = document.getElementById("configImportInput");
 let mappingController = null;
 let rulesController = null;
 let detectedHeader = null;
@@ -57,11 +64,59 @@ const ensuredSaveRulesButton = assertElement(saveRulesButton, "Regel speichern B
 const ensuredDateDisplayFormatInput = assertElement(dateDisplayFormatInput, "Anzeige-Datumsformat Eingabefeld fehlt");
 const ensuredAmountDisplayFormatInput = assertElement(amountDisplayFormatInput, "Anzeige-Betragsformat Eingabefeld fehlt");
 const ensuredApplyDisplaySettingsButton = assertElement(applyDisplaySettingsButton, "Anzeige aktualisieren Button fehlt");
+const ensuredDownloadMaskedButton = assertElement(downloadMaskedButton, "Download anonymisierte Umsätze Button fehlt");
+const ensuredExportConfigButton = assertElement(exportConfigButton, "Konfiguration exportieren Button fehlt");
+const ensuredImportConfigButton = assertElement(importConfigButton, "Konfiguration importieren Button fehlt");
+const ensuredConfigImportInput = assertElement(configImportInput, "Konfigurations-Dateiupload fehlt");
 ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
 ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
 function setStatus(message, type = "info") {
     ensuredStatusArea.textContent = message;
     ensuredStatusArea.setAttribute("data-status", type);
+}
+function createTimestampedFilename(base, extension) {
+    const datePart = new Date().toISOString().slice(0, 10);
+    return `${base}-${datePart}.${extension}`;
+}
+function triggerDownload(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+}
+const CSV_COLUMNS = [
+    "bank_name",
+    "booking_date",
+    "booking_text",
+    "booking_type",
+    "booking_amount",
+];
+function escapeCsvValue(value) {
+    const needsEscaping = /[";\n\r]/.test(value);
+    const normalized = value.replace(/"/g, '""');
+    return needsEscaping ? `"${normalized}"` : normalized;
+}
+function createCsvContent(entries, settings) {
+    const header = CSV_COLUMNS.join(";");
+    const rows = entries.map((tx) => {
+        return CSV_COLUMNS
+            .map((column) => {
+            if (column === "booking_amount") {
+                return escapeCsvValue(formatBookingAmount(tx.booking_amount, settings));
+            }
+            const raw = tx[column];
+            const normalized = raw == null ? "" : String(raw);
+            return escapeCsvValue(normalized);
+        })
+            .join(";");
+    });
+    return [header, ...rows].join("\n");
 }
 function resetAnonymizationState() {
     anonymizedActive = false;
@@ -231,11 +286,7 @@ function reformatTransactionsForBank(mapping) {
     }
     return updated;
 }
-function handleDisplaySettingsUpdate() {
-    const nextSettings = sanitizeDisplaySettings({
-        booking_date_display_format: ensuredDateDisplayFormatInput.value,
-        booking_amount_display_format: ensuredAmountDisplayFormatInput.value,
-    });
+function applyDisplaySettingsAndRefresh(nextSettings) {
     displaySettings = nextSettings;
     ensuredDateDisplayFormatInput.value = nextSettings.booking_date_display_format;
     ensuredAmountDisplayFormatInput.value = nextSettings.booking_amount_display_format;
@@ -247,12 +298,21 @@ function handleDisplaySettingsUpdate() {
     else {
         saveTransactions([]);
     }
-    transactions = formatTransactionsForDisplay(loadTransactions(), displaySettings);
+    const stored = loadTransactions();
+    transactions = formatTransactionsForDisplay(stored, displaySettings);
     if (anonymizedCache.length > 0) {
         anonymizedCache = formatTransactionsForDisplay(anonymizedCache, displaySettings);
     }
     const activeView = anonymizedActive ? anonymizedCache : transactions;
     renderTransactions(activeView);
+    return activeView;
+}
+function handleDisplaySettingsUpdate() {
+    const nextSettings = sanitizeDisplaySettings({
+        booking_date_display_format: ensuredDateDisplayFormatInput.value,
+        booking_amount_display_format: ensuredAmountDisplayFormatInput.value,
+    });
+    const activeView = applyDisplaySettingsAndRefresh(nextSettings);
     const message = activeView.length > 0
         ? "Anzeigeeinstellungen gespeichert und Tabelle aktualisiert."
         : "Anzeigeeinstellungen gespeichert.";
@@ -379,6 +439,140 @@ function handleSaveMaskedCopy() {
     saveMaskedTransactions(anonymizedCache);
     setStatus("Anonymisierte Kopie gespeichert.", "info");
 }
+function handleDownloadMaskedCsv() {
+    const masked = loadMaskedTransactions();
+    if (masked.length === 0) {
+        setStatus("Keine anonymisierten Umsätze im Speicher gefunden.", "warning");
+        return;
+    }
+    const formatted = formatTransactionsForDisplay(masked, displaySettings);
+    const csvContent = createCsvContent(formatted, displaySettings);
+    const filename = createTimestampedFilename("anonymisierte-umsaetze", "csv");
+    triggerDownload(filename, csvContent, "text/csv;charset=utf-8");
+    setStatus(`${masked.length} anonymisierte Umsätze exportiert.`, "info");
+}
+function handleExportConfig() {
+    const payload = {
+        [CONFIG_MAPPING_KEY]: loadBankMappings(),
+        [CONFIG_DISPLAY_KEY]: loadDisplaySettings(),
+        [CONFIG_RULES_KEY]: loadAnonymizationRules(),
+    };
+    const serialized = JSON.stringify(payload, null, 2);
+    const filename = createTimestampedFilename("umsatz-anonymizer-konfiguration", "json");
+    triggerDownload(filename, serialized, "application/json;charset=utf-8");
+    setStatus("Konfiguration exportiert.", "info");
+}
+async function handleConfigFileImport(file) {
+    setStatus(`Konfigurationsdatei "${file.name}" wird importiert ...`, "info");
+    try {
+        const text = await file.text();
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        }
+        catch (error) {
+            console.error(error);
+            setStatus("Die Konfigurationsdatei enthält kein gültiges JSON.", "error");
+            return;
+        }
+        if (typeof parsed !== "object" || parsed === null) {
+            setStatus("Unbekanntes Format der Konfigurationsdatei.", "error");
+            return;
+        }
+        const data = parsed;
+        const mappingProvided = Object.prototype.hasOwnProperty.call(data, CONFIG_MAPPING_KEY);
+        const displayProvided = Object.prototype.hasOwnProperty.call(data, CONFIG_DISPLAY_KEY);
+        const rulesProvided = Object.prototype.hasOwnProperty.call(data, CONFIG_RULES_KEY);
+        if (!mappingProvided && !displayProvided && !rulesProvided) {
+            setStatus("Keine unterstützten Einstellungen in der Konfigurationsdatei gefunden.", "warning");
+            return;
+        }
+        const summaryParts = [];
+        const warningParts = [];
+        let importedMappings = null;
+        if (mappingProvided) {
+            importedMappings = importBankMappings(data[CONFIG_MAPPING_KEY]);
+            if (importedMappings === null) {
+                warningParts.push("Mapping auf Zielschema konnte nicht importiert werden.");
+            }
+            else {
+                const count = importedMappings.length;
+                summaryParts.push(count === 1 ? "1 Mapping übernommen." : `${count} Mappings übernommen.`);
+            }
+        }
+        let importedDisplaySettings = null;
+        if (displayProvided) {
+            importedDisplaySettings = sanitizeDisplaySettings(data[CONFIG_DISPLAY_KEY]);
+            summaryParts.push("Anzeigeeinstellungen übernommen.");
+        }
+        let importedRulesResult = null;
+        if (rulesProvided) {
+            importedRulesResult = importAnonymizationRules(data[CONFIG_RULES_KEY]);
+            if (!importedRulesResult) {
+                warningParts.push("Anonymisierungsregeln konnten nicht importiert werden.");
+            }
+            else {
+                const count = importedRulesResult.rules.length;
+                summaryParts.push(count === 1 ? "1 Regel übernommen." : `${count} Regeln übernommen.`);
+            }
+        }
+        if (importedDisplaySettings) {
+            displaySettings = importedDisplaySettings;
+        }
+        let updatedTransactions = 0;
+        if (importedMappings && importedMappings.length > 0) {
+            importedMappings.forEach((mapping) => {
+                updatedTransactions += reformatTransactionsForBank(mapping);
+            });
+        }
+        const refreshNeeded = displayProvided || mappingProvided;
+        if (refreshNeeded) {
+            applyDisplaySettingsAndRefresh(displaySettings);
+        }
+        if (mappingProvided && mappingController) {
+            const bankName = ensuredBankNameInput.value.trim();
+            if (bankName) {
+                const stored = loadMapping(bankName);
+                if (stored) {
+                    mappingController.setMapping(stored);
+                }
+                else {
+                    mappingController.clear();
+                }
+            }
+            else {
+                mappingController.clear();
+            }
+        }
+        if (importedRulesResult) {
+            if (rulesController) {
+                rulesController.setRules(importedRulesResult.rules);
+            }
+            if (anonymizedActive) {
+                const result = applyAnonymization(transactions, importedRulesResult.rules);
+                anonymizedCache = result.data;
+                lastAnonymizationWarnings = result.warnings;
+                ensuredAnonymizeButton.textContent = "Original anzeigen";
+                ensuredSaveMaskedButton.disabled = anonymizedCache.length === 0;
+                renderTransactions(anonymizedCache);
+                if (lastAnonymizationWarnings.length > 0) {
+                    warningParts.push(lastAnonymizationWarnings.join(" "));
+                }
+            }
+        }
+        if (updatedTransactions > 0) {
+            summaryParts.push(`${updatedTransactions} vorhandene Umsätze aktualisiert.`);
+        }
+        const statusType = warningParts.length > 0 ? "warning" : "info";
+        const messageParts = [...summaryParts, ...warningParts];
+        const message = messageParts.length > 0 ? messageParts.join(" ") : "Konfiguration importiert.";
+        setStatus(message, statusType);
+    }
+    catch (error) {
+        console.error(error);
+        setStatus("Fehler beim Import der Konfigurationsdatei.", "error");
+    }
+}
 function handleSaveRules() {
     if (!rulesController) {
         return;
@@ -455,6 +649,27 @@ function init() {
     ensuredSaveMaskedButton.addEventListener("click", (event) => {
         event.preventDefault();
         handleSaveMaskedCopy();
+    });
+    ensuredDownloadMaskedButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleDownloadMaskedCsv();
+    });
+    ensuredExportConfigButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleExportConfig();
+    });
+    ensuredImportConfigButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        ensuredConfigImportInput.value = "";
+        ensuredConfigImportInput.click();
+    });
+    ensuredConfigImportInput.addEventListener("change", (event) => {
+        const input = event.currentTarget;
+        const file = input.files?.[0];
+        if (file) {
+            void handleConfigFileImport(file);
+        }
+        input.value = "";
     });
     rulesController = buildRulesUI(ensuredRulesContainer);
     const { rules } = loadAnonymizationRules();

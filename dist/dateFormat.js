@@ -1,4 +1,4 @@
-const TOKEN_REGEX = /(yyyy|MM|dd|HH|mm|ss|SSS)/g;
+const TOKEN_REGEX = /(yyyy|MM|dd|HH|mm|ss|SSSSSS|SSS)/g;
 const TOKEN_PATTERNS = {
     yyyy: {
         pattern: "\\d{4}",
@@ -36,6 +36,13 @@ const TOKEN_PATTERNS = {
             parts.second = Number.parseInt(value, 10);
         },
     },
+    SSSSSS: {
+        pattern: "\\d{6}",
+        apply: (value, parts) => {
+            const microseconds = Number.parseInt(value, 10);
+            parts.millisecond = Math.floor(microseconds / 1000);
+        },
+    },
     SSS: {
         pattern: "\\d{3}",
         apply: (value, parts) => {
@@ -50,6 +57,7 @@ const TOKEN_FORMATTERS = {
     HH: (date) => date.getHours().toString().padStart(2, "0"),
     mm: (date) => date.getMinutes().toString().padStart(2, "0"),
     ss: (date) => date.getSeconds().toString().padStart(2, "0"),
+    SSSSSS: (date) => (date.getMilliseconds() * 1000).toString().padStart(6, "0"),
     SSS: (date) => date.getMilliseconds().toString().padStart(3, "0"),
 };
 function escapeRegExp(literal) {
@@ -60,7 +68,7 @@ export function parseDateWithFormat(value, format) {
     if (!trimmedFormat) {
         return null;
     }
-    const tokenRegex = /yyyy|MM|dd|HH|mm|ss|SSS/g;
+    const tokenRegex = /yyyy|MM|dd|HH|mm|ss|SSSSSS|SSS/g;
     let pattern = "";
     const setters = [];
     let lastIndex = 0;

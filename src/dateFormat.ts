@@ -1,4 +1,4 @@
-const TOKEN_REGEX = /(yyyy|MM|dd|HH|mm|ss|SSS)/g;
+const TOKEN_REGEX = /(yyyy|MM|dd|HH|mm|ss|SSSSSS|SSS)/g;
 
 const TOKEN_PATTERNS: Record<string, { pattern: string; apply: (value: string, parts: DateParts) => void }> = {
   yyyy: {
@@ -37,6 +37,13 @@ const TOKEN_PATTERNS: Record<string, { pattern: string; apply: (value: string, p
       parts.second = Number.parseInt(value, 10);
     },
   },
+  SSSSSS: {
+    pattern: "\\d{6}",
+    apply: (value, parts) => {
+      const microseconds = Number.parseInt(value, 10);
+      parts.millisecond = Math.floor(microseconds / 1000);
+    },
+  },
   SSS: {
     pattern: "\\d{3}",
     apply: (value, parts) => {
@@ -52,6 +59,7 @@ const TOKEN_FORMATTERS: Record<string, (date: Date) => string> = {
   HH: (date) => date.getHours().toString().padStart(2, "0"),
   mm: (date) => date.getMinutes().toString().padStart(2, "0"),
   ss: (date) => date.getSeconds().toString().padStart(2, "0"),
+  SSSSSS: (date) => (date.getMilliseconds() * 1000).toString().padStart(6, "0"),
   SSS: (date) => date.getMilliseconds().toString().padStart(3, "0"),
 };
 
@@ -75,7 +83,7 @@ export function parseDateWithFormat(value: string, format: string): Date | null 
     return null;
   }
 
-  const tokenRegex = /yyyy|MM|dd|HH|mm|ss|SSS/g;
+  const tokenRegex = /yyyy|MM|dd|HH|mm|ss|SSSSSS|SSS/g;
   let pattern = "";
   const setters: ((segment: string, parts: DateParts) => void)[] = [];
   let lastIndex = 0;
