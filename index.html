@@ -71,11 +71,27 @@
         </div>
       </details>
 
+      <details class="collapsible-section" open>
+        <summary>
+          <h2>Konfigurationen</h2>
+        </summary>
+        <div class="collapsible-content">
+          <div class="button-row">
+            <button id="exportConfigButton" type="button">Konfiguration exportieren</button>
+            <button id="importConfigButton" type="button">Konfiguration importieren</button>
+            <input id="configImportInput" type="file" accept="application/json" hidden />
+          </div>
+        </div>
+      </details>
+
       <section>
         <h2>Übersicht</h2>
         <div class="button-row">
           <button id="anonymizeButton" type="button">Anonymisieren</button>
           <button id="saveMaskedButton" type="button" disabled>Anonymisierte Kopie speichern</button>
+          <button id="downloadMaskedButton" type="button">
+            Anonymisierte Umsätze herunterladen
+          </button>
         </div>
         <table>
           <thead>

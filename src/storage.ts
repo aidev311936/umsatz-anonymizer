@@ -83,6 +83,18 @@ export function loadBankMappings(): BankMapping[] {
     .map(sanitizeBankMapping);
 }
 
+export function importBankMappings(raw: unknown): BankMapping[] | null {
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const sanitized = raw
+    .map(toBankMapping)
+    .filter((entry): entry is BankMapping => entry !== null)
+    .map(sanitizeBankMapping);
+  localStorage.setItem(BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+  return sanitized;
+}
+
 export function saveBankMapping(mapping: BankMapping): void {
   const sanitized = sanitizeBankMapping(mapping);
   const existing = loadBankMappings();
@@ -339,4 +351,28 @@ export function saveAnonymizationRules(rules: AnonRule[]): void {
     rules: rules.map(sanitizeRule),
   };
   localStorage.setItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
+}
+
+export function importAnonymizationRules(
+  raw: unknown
+): { rules: AnonRule[]; version: number } | null {
+  if (Array.isArray(raw)) {
+    const rules = raw.filter(isAnonRule).map(sanitizeRule);
+    const payload = { version: CURRENT_RULE_VERSION, rules };
+    localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+    return payload;
+  }
+
+  if (typeof raw === "object" && raw !== null && "rules" in raw) {
+    const maybe = raw as { rules?: unknown; version?: unknown };
+    if (Array.isArray(maybe.rules)) {
+      const rules = maybe.rules.filter(isAnonRule).map(sanitizeRule);
+      const version = typeof maybe.version === "number" ? maybe.version : CURRENT_RULE_VERSION;
+      const payload = { version, rules };
+      localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+      return payload;
+    }
+  }
+
+  return null;
 }
