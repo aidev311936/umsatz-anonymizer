@@ -37,9 +37,6 @@ export function buildMappingUI(container, headers, initialMapping) {
         booking_type: [],
         booking_amount: [],
         booking_date_parse_format: initialMapping?.booking_date_parse_format ?? "",
-        booking_date_display_format: initialMapping?.booking_date_display_format ??
-            initialMapping?.booking_date_parse_format ??
-            "",
     };
     const entries = {};
     function updateSelectOptions(select, values) {
@@ -160,23 +157,7 @@ export function buildMappingUI(container, headers, initialMapping) {
     });
     parseWrapper.appendChild(parseLabel);
     parseWrapper.appendChild(parseInput);
-    const displayWrapper = document.createElement("div");
-    displayWrapper.className = "mapping-field";
-    const displayLabel = document.createElement("label");
-    displayLabel.textContent = "Datumsformat (Anzeige):";
-    displayLabel.htmlFor = "booking-date-display-format";
-    const displayInput = document.createElement("input");
-    displayInput.type = "text";
-    displayInput.id = "booking-date-display-format";
-    displayInput.placeholder = "z. B. dd.MM.yyyy HH:mm:ss";
-    displayInput.value = state.booking_date_display_format;
-    displayInput.addEventListener("input", () => {
-        state.booking_date_display_format = displayInput.value;
-    });
-    displayWrapper.appendChild(displayLabel);
-    displayWrapper.appendChild(displayInput);
     dateSettings.appendChild(parseWrapper);
-    dateSettings.appendChild(displayWrapper);
     container.appendChild(dateSettings);
     syncDisabledOptions();
     if (initialMapping) {
@@ -190,23 +171,16 @@ export function buildMappingUI(container, headers, initialMapping) {
             state.booking_date_parse_format = initialMapping.booking_date_parse_format;
             parseInput.value = initialMapping.booking_date_parse_format;
         }
-        if (typeof initialMapping.booking_date_display_format === "string") {
-            state.booking_date_display_format = initialMapping.booking_date_display_format;
-            displayInput.value = initialMapping.booking_date_display_format;
-        }
     }
     return {
         getMapping() {
             const parseFormat = state.booking_date_parse_format.trim();
-            const displayFormatRaw = state.booking_date_display_format.trim();
-            const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
             return {
                 booking_date: [...state.booking_date],
                 booking_text: [...state.booking_text],
                 booking_type: [...state.booking_type],
                 booking_amount: [...state.booking_amount],
                 booking_date_parse_format: parseFormat,
-                booking_date_display_format: displayFormat,
             };
         },
         setMapping(mapping) {
@@ -224,11 +198,6 @@ export function buildMappingUI(container, headers, initialMapping) {
                 : "";
             state.booking_date_parse_format = parseValue;
             parseInput.value = parseValue;
-            const displayValue = typeof mapping.booking_date_display_format === "string"
-                ? mapping.booking_date_display_format
-                : parseValue;
-            state.booking_date_display_format = displayValue;
-            displayInput.value = displayValue;
         },
         validate() {
             const missing = TARGET_FIELDS.filter((field) => state[field].length === 0);
@@ -243,9 +212,7 @@ export function buildMappingUI(container, headers, initialMapping) {
                 updateUI(field);
             });
             state.booking_date_parse_format = "";
-            state.booking_date_display_format = "";
             parseInput.value = "";
-            displayInput.value = "";
             syncDisabledOptions();
         },
     };

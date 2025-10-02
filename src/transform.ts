@@ -1,5 +1,6 @@
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
-import { BankMapping, UnifiedTx } from "./types.js";
+import { DEFAULT_DATE_DISPLAY_FORMAT } from "./displaySettings.js";
+import { BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
 
 type MappingSelection = Omit<BankMapping, "bank_name">;
 
@@ -51,7 +52,8 @@ export function applyMapping(
   rows: string[][],
   header: string[],
   mapping: MappingSelection,
-  bankName: string
+  bankName: string,
+  displaySettings: DisplaySettings
 ): UnifiedTx[] {
   const indexMap = createIndexMap(header);
   const transactions: UnifiedTx[] = [];
@@ -65,7 +67,9 @@ export function applyMapping(
     const bookingAmount = firstNonEmpty(mapping.booking_amount.map((column) => readValue(row, column, indexMap)));
 
     const parseFormat = mapping.booking_date_parse_format?.trim() ?? "";
-    const displayFormat = mapping.booking_date_display_format?.trim() ?? "";
+    const displayFormatRaw = displaySettings.booking_date_display_format?.trim() ?? "";
+    const displayFormat =
+      displayFormatRaw.length > 0 ? displayFormatRaw : DEFAULT_DATE_DISPLAY_FORMAT;
 
     let bookingDateFormatted = bookingDateRaw;
     let bookingDateIso: string | null = null;
@@ -74,9 +78,9 @@ export function applyMapping(
       const parsed = parseDateWithFormat(bookingDateRaw, parseFormat);
       if (parsed) {
         bookingDateIso = parsed.toISOString();
-        const effectiveDisplayFormat = displayFormat.length > 0 ? displayFormat : parseFormat;
-        bookingDateFormatted = effectiveDisplayFormat
-          ? formatDateWithFormat(parsed, effectiveDisplayFormat)
+        const targetFormat = displayFormat.length > 0 ? displayFormat : parseFormat;
+        bookingDateFormatted = targetFormat
+          ? formatDateWithFormat(parsed, targetFormat)
           : bookingDateRaw;
       }
     }

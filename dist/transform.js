@@ -1,4 +1,5 @@
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
+import { DEFAULT_DATE_DISPLAY_FORMAT } from "./displaySettings.js";
 function createIndexMap(header) {
     const map = {};
     header.forEach((name, index) => {
@@ -36,7 +37,7 @@ function isTransactionEmpty(tx) {
         tx.booking_type.trim() === "" &&
         tx.booking_amount.trim() === "");
 }
-export function applyMapping(rows, header, mapping, bankName) {
+export function applyMapping(rows, header, mapping, bankName, displaySettings) {
     const indexMap = createIndexMap(header);
     const transactions = [];
     for (const row of rows) {
@@ -45,16 +46,17 @@ export function applyMapping(rows, header, mapping, bankName) {
         const bookingType = firstNonEmpty(mapping.booking_type.map((column) => readValue(row, column, indexMap)));
         const bookingAmount = firstNonEmpty(mapping.booking_amount.map((column) => readValue(row, column, indexMap)));
         const parseFormat = mapping.booking_date_parse_format?.trim() ?? "";
-        const displayFormat = mapping.booking_date_display_format?.trim() ?? "";
+        const displayFormatRaw = displaySettings.booking_date_display_format?.trim() ?? "";
+        const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : DEFAULT_DATE_DISPLAY_FORMAT;
         let bookingDateFormatted = bookingDateRaw;
         let bookingDateIso = null;
         if (parseFormat && bookingDateRaw.length > 0) {
             const parsed = parseDateWithFormat(bookingDateRaw, parseFormat);
             if (parsed) {
                 bookingDateIso = parsed.toISOString();
-                const effectiveDisplayFormat = displayFormat.length > 0 ? displayFormat : parseFormat;
-                bookingDateFormatted = effectiveDisplayFormat
-                    ? formatDateWithFormat(parsed, effectiveDisplayFormat)
+                const targetFormat = displayFormat.length > 0 ? displayFormat : parseFormat;
+                bookingDateFormatted = targetFormat
+                    ? formatDateWithFormat(parsed, targetFormat)
                     : bookingDateRaw;
             }
         }

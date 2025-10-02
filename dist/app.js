@@ -3,9 +3,10 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
+import { formatTransactionsForDisplay, sanitizeDisplaySettings } from "./displaySettings.js";
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
 const fileInput = document.getElementById("csvInput");
 const bankNameInput = document.getElementById("bankName");
@@ -18,6 +19,9 @@ const anonymizeButton = document.getElementById("anonymizeButton");
 const saveMaskedButton = document.getElementById("saveMaskedButton");
 const rulesContainer = document.getElementById("rulesContainer");
 const saveRulesButton = document.getElementById("saveRulesButton");
+const dateDisplayFormatInput = document.getElementById("dateDisplayFormat");
+const amountDisplayFormatInput = document.getElementById("amountDisplayFormat");
+const applyDisplaySettingsButton = document.getElementById("applyDisplaySettingsButton");
 let mappingController = null;
 let rulesController = null;
 let detectedHeader = null;
@@ -25,6 +29,7 @@ let transactions = [];
 let anonymizedActive = false;
 let anonymizedCache = [];
 let lastAnonymizationWarnings = [];
+let displaySettings = loadDisplaySettings();
 function getConfiguredRules() {
     if (rulesController) {
         return rulesController.getRules();
@@ -49,6 +54,11 @@ const ensuredAnonymizeButton = assertElement(anonymizeButton, "Anonymisieren But
 const ensuredSaveMaskedButton = assertElement(saveMaskedButton, "Speichern Button fehlt");
 const ensuredRulesContainer = assertElement(rulesContainer, "Regel-Container fehlt");
 const ensuredSaveRulesButton = assertElement(saveRulesButton, "Regel speichern Button fehlt");
+const ensuredDateDisplayFormatInput = assertElement(dateDisplayFormatInput, "Anzeige-Datumsformat Eingabefeld fehlt");
+const ensuredAmountDisplayFormatInput = assertElement(amountDisplayFormatInput, "Anzeige-Betragsformat Eingabefeld fehlt");
+const ensuredApplyDisplaySettingsButton = assertElement(applyDisplaySettingsButton, "Anzeige aktualisieren Button fehlt");
+ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
 function setStatus(message, type = "info") {
     ensuredStatusArea.textContent = message;
     ensuredStatusArea.setAttribute("data-status", type);
@@ -61,8 +71,17 @@ function resetAnonymizationState() {
     ensuredSaveMaskedButton.disabled = true;
 }
 function renderTransactions(view) {
-    renderTable(view, ensuredTableBody);
-    if (view.length === 0) {
+    const isPrimaryView = view === transactions;
+    const isAnonymizedView = view === anonymizedCache;
+    const formatted = formatTransactionsForDisplay(view, displaySettings);
+    if (isPrimaryView) {
+        transactions = formatted;
+    }
+    if (isAnonymizedView) {
+        anonymizedCache = formatted;
+    }
+    renderTable(formatted, ensuredTableBody, displaySettings);
+    if (formatted.length === 0) {
         setStatus("Keine Umsätze gespeichert.", "info");
     }
 }
@@ -122,7 +141,6 @@ function getCurrentMapping(bankName) {
         booking_type: mapping.booking_type,
         booking_amount: mapping.booking_amount,
         booking_date_parse_format: mapping.booking_date_parse_format,
-        booking_date_display_format: mapping.booking_date_display_format,
     };
 }
 function describeMappingField(field) {
@@ -137,8 +155,6 @@ function describeMappingField(field) {
             return "Betrag";
         case "booking_date_parse_format":
             return "Datumsformat (Import)";
-        case "booking_date_display_format":
-            return "Datumsformat (Anzeige)";
         default:
             return field;
     }
@@ -168,7 +184,7 @@ function reformatTransactionsForBank(mapping) {
         return 0;
     }
     const parseFormat = mapping.booking_date_parse_format.trim();
-    const displayFormatRaw = mapping.booking_date_display_format.trim();
+    const displayFormatRaw = displaySettings.booking_date_display_format.trim();
     const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
     let updated = 0;
     const next = existing.map((tx) => {
@@ -183,9 +199,9 @@ function reformatTransactionsForBank(mapping) {
             const parsed = parseDateWithFormat(normalizedRaw, parseFormat);
             if (parsed) {
                 nextIso = parsed.toISOString();
-                const effectiveDisplay = displayFormat.length > 0 ? displayFormat : parseFormat;
-                nextDisplay = effectiveDisplay
-                    ? formatDateWithFormat(parsed, effectiveDisplay)
+                const targetFormat = displayFormat.length > 0 ? displayFormat : parseFormat;
+                nextDisplay = targetFormat
+                    ? formatDateWithFormat(parsed, targetFormat)
                     : normalizedRaw;
             }
         }
@@ -214,6 +230,33 @@ function reformatTransactionsForBank(mapping) {
         saveTransactions(next);
     }
     return updated;
+}
+function handleDisplaySettingsUpdate() {
+    const nextSettings = sanitizeDisplaySettings({
+        booking_date_display_format: ensuredDateDisplayFormatInput.value,
+        booking_amount_display_format: ensuredAmountDisplayFormatInput.value,
+    });
+    displaySettings = nextSettings;
+    ensuredDateDisplayFormatInput.value = nextSettings.booking_date_display_format;
+    ensuredAmountDisplayFormatInput.value = nextSettings.booking_amount_display_format;
+    saveDisplaySettings(displaySettings);
+    if (transactions.length > 0) {
+        transactions = formatTransactionsForDisplay(transactions, displaySettings);
+        saveTransactions(transactions);
+    }
+    else {
+        saveTransactions([]);
+    }
+    transactions = formatTransactionsForDisplay(loadTransactions(), displaySettings);
+    if (anonymizedCache.length > 0) {
+        anonymizedCache = formatTransactionsForDisplay(anonymizedCache, displaySettings);
+    }
+    const activeView = anonymizedActive ? anonymizedCache : transactions;
+    renderTransactions(activeView);
+    const message = activeView.length > 0
+        ? "Anzeigeeinstellungen gespeichert und Tabelle aktualisiert."
+        : "Anzeigeeinstellungen gespeichert.";
+    setStatus(message, "info");
 }
 function handleSaveMapping() {
     const bankName = ensuredBankNameInput.value.trim();
@@ -266,7 +309,7 @@ function handleImport() {
         return;
     }
     const rows = detectedHeader.dataRows;
-    const transformed = applyMapping(rows, detectedHeader.header, mapping, bankName);
+    const transformed = applyMapping(rows, detectedHeader.header, mapping, bankName, displaySettings);
     if (transformed.length === 0) {
         setStatus("Keine Datenzeilen gefunden.", "warning");
         return;
@@ -400,6 +443,10 @@ function init() {
     ensuredImportButton.addEventListener("click", (event) => {
         event.preventDefault();
         handleImport();
+    });
+    ensuredApplyDisplaySettingsButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleDisplaySettingsUpdate();
     });
     ensuredAnonymizeButton.addEventListener("click", (event) => {
         event.preventDefault();

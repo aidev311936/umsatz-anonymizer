@@ -1,6 +1,11 @@
-import { UnifiedTx } from "./types.js";
+import { formatBookingAmount } from "./displaySettings.js";
+import { DisplaySettings, UnifiedTx } from "./types.js";
 
-export function renderTable(transactions: UnifiedTx[], tbody: HTMLTableSectionElement): void {
+export function renderTable(
+  transactions: UnifiedTx[],
+  tbody: HTMLTableSectionElement,
+  displaySettings: DisplaySettings
+): void {
   tbody.innerHTML = "";
 
   transactions.forEach((tx) => {
@@ -19,7 +24,10 @@ export function renderTable(transactions: UnifiedTx[], tbody: HTMLTableSectionEl
     row.appendChild(bookingType);
 
     const bookingAmount = document.createElement("td");
-    bookingAmount.textContent = tx.booking_amount;
+    bookingAmount.textContent = formatBookingAmount(
+      tx.booking_amount,
+      displaySettings
+    );
     bookingAmount.className = "amount";
     row.appendChild(bookingAmount);
 

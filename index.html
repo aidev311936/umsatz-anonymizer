@@ -40,6 +40,27 @@
 
       <details class="collapsible-section" open>
         <summary>
+          <h2>Anzeigeeinstellungen</h2>
+        </summary>
+        <div class="collapsible-content">
+          <label for="dateDisplayFormat">Datumsformat (Anzeige)</label>
+          <input
+            id="dateDisplayFormat"
+            type="text"
+            placeholder="z. B. dd.MM.yyyy HH:mm"
+          />
+          <label for="amountDisplayFormat">Betragsformat (Anzeige)</label>
+          <input id="amountDisplayFormat" type="text" placeholder="z. B. #,##0.00" />
+          <div class="button-row">
+            <button id="applyDisplaySettingsButton" type="button">
+              Anzeige aktualisieren
+            </button>
+          </div>
+        </div>
+      </details>
+
+      <details class="collapsible-section" open>
+        <summary>
           <h2>Anonymisierungsregeln</h2>
         </summary>
         <div class="collapsible-content">
