@@ -30,9 +30,9 @@ import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
 
 type MappingSelection = Omit<BankMapping, "bank_name">;
 
-const CONFIG_MAPPING_KEY = "Mapping auf Zielschema";
-const CONFIG_DISPLAY_KEY = "Anzeigeeinstellungen";
-const CONFIG_RULES_KEY = "Anonymisierungsregeln";
+const CONFIG_MAPPING_KEY = "mapping_to_target_schema";
+const CONFIG_DISPLAY_KEY = "display_settings";
+const CONFIG_RULES_KEY = "anonymization_rules";
 
 const fileInput = document.getElementById("csvInput") as HTMLInputElement | null;
 const bankNameInput = document.getElementById("bankName") as HTMLInputElement | null;
