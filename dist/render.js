@@ -1,4 +1,5 @@
-export function renderTable(transactions, tbody) {
+import { formatBookingAmount } from "./displaySettings.js";
+export function renderTable(transactions, tbody, displaySettings) {
     tbody.innerHTML = "";
     transactions.forEach((tx) => {
         const row = document.createElement("tr");
@@ -12,7 +13,7 @@ export function renderTable(transactions, tbody) {
         bookingType.textContent = tx.booking_type;
         row.appendChild(bookingType);
         const bookingAmount = document.createElement("td");
-        bookingAmount.textContent = tx.booking_amount;
+        bookingAmount.textContent = formatBookingAmount(tx.booking_amount, displaySettings);
         bookingAmount.className = "amount";
         row.appendChild(bookingAmount);
         tbody.appendChild(row);

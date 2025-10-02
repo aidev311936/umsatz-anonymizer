@@ -5,18 +5,21 @@ import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
 import {
   appendTransactions,
+  loadDisplaySettings,
   loadAnonymizationRules,
   loadBankMappings,
   loadMaskedTransactions,
   loadTransactions,
   saveBankMapping,
+  saveDisplaySettings,
   saveAnonymizationRules,
   saveTransactions,
   saveMaskedTransactions,
 } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI, RulesUIController } from "./rulesUI.js";
-import { AnonRule, BankMapping, UnifiedTx } from "./types.js";
+import { formatTransactionsForDisplay, sanitizeDisplaySettings } from "./displaySettings.js";
+import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
 
 type MappingSelection = Omit<BankMapping, "bank_name">;
@@ -32,6 +35,11 @@ const anonymizeButton = document.getElementById("anonymizeButton") as HTMLButton
 const saveMaskedButton = document.getElementById("saveMaskedButton") as HTMLButtonElement | null;
 const rulesContainer = document.getElementById("rulesContainer");
 const saveRulesButton = document.getElementById("saveRulesButton") as HTMLButtonElement | null;
+const dateDisplayFormatInput = document.getElementById("dateDisplayFormat") as HTMLInputElement | null;
+const amountDisplayFormatInput = document.getElementById("amountDisplayFormat") as HTMLInputElement | null;
+const applyDisplaySettingsButton = document.getElementById(
+  "applyDisplaySettingsButton"
+) as HTMLButtonElement | null;
 
 let mappingController: MappingUIController | null = null;
 let rulesController: RulesUIController | null = null;
@@ -40,6 +48,7 @@ let transactions: UnifiedTx[] = [];
 let anonymizedActive = false;
 let anonymizedCache: UnifiedTx[] = [];
 let lastAnonymizationWarnings: string[] = [];
+let displaySettings: DisplaySettings = loadDisplaySettings();
 
 function getConfiguredRules(): AnonRule[] {
   if (rulesController) {
@@ -67,6 +76,21 @@ const ensuredAnonymizeButton = assertElement(anonymizeButton, "Anonymisieren But
 const ensuredSaveMaskedButton = assertElement(saveMaskedButton, "Speichern Button fehlt");
 const ensuredRulesContainer = assertElement(rulesContainer, "Regel-Container fehlt");
 const ensuredSaveRulesButton = assertElement(saveRulesButton, "Regel speichern Button fehlt");
+const ensuredDateDisplayFormatInput = assertElement(
+  dateDisplayFormatInput,
+  "Anzeige-Datumsformat Eingabefeld fehlt"
+);
+const ensuredAmountDisplayFormatInput = assertElement(
+  amountDisplayFormatInput,
+  "Anzeige-Betragsformat Eingabefeld fehlt"
+);
+const ensuredApplyDisplaySettingsButton = assertElement(
+  applyDisplaySettingsButton,
+  "Anzeige aktualisieren Button fehlt"
+);
+
+ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
 
 type StatusType = "info" | "error" | "warning";
 
@@ -84,8 +108,19 @@ function resetAnonymizationState(): void {
 }
 
 function renderTransactions(view: UnifiedTx[]): void {
-  renderTable(view, ensuredTableBody);
-  if (view.length === 0) {
+  const isPrimaryView = view === transactions;
+  const isAnonymizedView = view === anonymizedCache;
+  const formatted = formatTransactionsForDisplay(view, displaySettings);
+
+  if (isPrimaryView) {
+    transactions = formatted;
+  }
+  if (isAnonymizedView) {
+    anonymizedCache = formatted;
+  }
+
+  renderTable(formatted, ensuredTableBody, displaySettings);
+  if (formatted.length === 0) {
     setStatus("Keine Umsätze gespeichert.", "info");
   }
 }
@@ -151,7 +186,6 @@ function getCurrentMapping(bankName: string): BankMapping | null {
     booking_type: mapping.booking_type,
     booking_amount: mapping.booking_amount,
     booking_date_parse_format: mapping.booking_date_parse_format,
-    booking_date_display_format: mapping.booking_date_display_format,
   };
 }
 
@@ -167,8 +201,6 @@ function describeMappingField(field: keyof MappingSelection): string {
       return "Betrag";
     case "booking_date_parse_format":
       return "Datumsformat (Import)";
-    case "booking_date_display_format":
-      return "Datumsformat (Anzeige)";
     default:
       return field;
   }
@@ -201,8 +233,9 @@ function reformatTransactionsForBank(mapping: BankMapping): number {
   }
 
   const parseFormat = mapping.booking_date_parse_format.trim();
-  const displayFormatRaw = mapping.booking_date_display_format.trim();
-  const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
+  const displayFormatRaw = displaySettings.booking_date_display_format.trim();
+  const displayFormat =
+    displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
 
   let updated = 0;
 
@@ -221,9 +254,9 @@ function reformatTransactionsForBank(mapping: BankMapping): number {
       const parsed = parseDateWithFormat(normalizedRaw, parseFormat);
       if (parsed) {
         nextIso = parsed.toISOString();
-        const effectiveDisplay = displayFormat.length > 0 ? displayFormat : parseFormat;
-        nextDisplay = effectiveDisplay
-          ? formatDateWithFormat(parsed, effectiveDisplay)
+        const targetFormat = displayFormat.length > 0 ? displayFormat : parseFormat;
+        nextDisplay = targetFormat
+          ? formatDateWithFormat(parsed, targetFormat)
           : normalizedRaw;
       }
     }
@@ -258,6 +291,39 @@ function reformatTransactionsForBank(mapping: BankMapping): number {
   }
 
   return updated;
+}
+
+function handleDisplaySettingsUpdate(): void {
+  const nextSettings = sanitizeDisplaySettings({
+    booking_date_display_format: ensuredDateDisplayFormatInput.value,
+    booking_amount_display_format: ensuredAmountDisplayFormatInput.value,
+  });
+
+  displaySettings = nextSettings;
+  ensuredDateDisplayFormatInput.value = nextSettings.booking_date_display_format;
+  ensuredAmountDisplayFormatInput.value = nextSettings.booking_amount_display_format;
+  saveDisplaySettings(displaySettings);
+
+  if (transactions.length > 0) {
+    transactions = formatTransactionsForDisplay(transactions, displaySettings);
+    saveTransactions(transactions);
+  } else {
+    saveTransactions([]);
+  }
+
+  transactions = formatTransactionsForDisplay(loadTransactions(), displaySettings);
+
+  if (anonymizedCache.length > 0) {
+    anonymizedCache = formatTransactionsForDisplay(anonymizedCache, displaySettings);
+  }
+
+  const activeView = anonymizedActive ? anonymizedCache : transactions;
+  renderTransactions(activeView);
+
+  const message = activeView.length > 0
+    ? "Anzeigeeinstellungen gespeichert und Tabelle aktualisiert."
+    : "Anzeigeeinstellungen gespeichert.";
+  setStatus(message, "info");
 }
 
 function handleSaveMapping(): void {
@@ -314,7 +380,13 @@ function handleImport(): void {
     return;
   }
   const rows = detectedHeader.dataRows;
-  const transformed = applyMapping(rows, detectedHeader.header, mapping, bankName);
+  const transformed = applyMapping(
+    rows,
+    detectedHeader.header,
+    mapping,
+    bankName,
+    displaySettings
+  );
   if (transformed.length === 0) {
     setStatus("Keine Datenzeilen gefunden.", "warning");
     return;
@@ -452,6 +524,10 @@ function init(): void {
   ensuredImportButton.addEventListener("click", (event) => {
     event.preventDefault();
     handleImport();
+  });
+  ensuredApplyDisplaySettingsButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleDisplaySettingsUpdate();
   });
   ensuredAnonymizeButton.addEventListener("click", (event) => {
     event.preventDefault();

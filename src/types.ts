@@ -5,7 +5,6 @@ export interface BankMapping {
   booking_type: string[];
   booking_amount: string[];
   booking_date_parse_format: string;
-  booking_date_display_format: string;
 }
 
 export interface UnifiedTx {
@@ -16,6 +15,11 @@ export interface UnifiedTx {
   booking_text: string;
   booking_type: string;
   booking_amount: string;
+}
+
+export interface DisplaySettings {
+  booking_date_display_format: string;
+  booking_amount_display_format: string;
 }
 
 export type AnonRule =

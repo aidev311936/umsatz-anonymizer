@@ -1,7 +1,9 @@
+import { sanitizeDisplaySettings } from "./displaySettings.js";
 const BANK_MAPPINGS_KEY = "bank_mappings_v1";
 const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
+const DISPLAY_SETTINGS_KEY = "display_settings_v1";
 const CURRENT_RULE_VERSION = 2;
 function isStringArray(value) {
     return Array.isArray(value) && value.every((entry) => typeof entry === "string");
@@ -21,9 +23,6 @@ function toBankMapping(value) {
     const parseFormat = typeof maybe.booking_date_parse_format === "string"
         ? maybe.booking_date_parse_format
         : "";
-    const displayFormatRaw = typeof maybe.booking_date_display_format === "string"
-        ? maybe.booking_date_display_format
-        : parseFormat;
     return {
         bank_name: maybe.bank_name,
         booking_date: [...maybe.booking_date],
@@ -31,13 +30,10 @@ function toBankMapping(value) {
         booking_type: [...maybe.booking_type],
         booking_amount: [...maybe.booking_amount],
         booking_date_parse_format: parseFormat,
-        booking_date_display_format: displayFormatRaw,
     };
 }
 function sanitizeBankMapping(mapping) {
     const parseFormat = mapping.booking_date_parse_format.trim();
-    const displayFormatRaw = mapping.booking_date_display_format.trim();
-    const displayFormat = displayFormatRaw.length > 0 ? displayFormatRaw : parseFormat;
     return {
         bank_name: mapping.bank_name,
         booking_date: [...mapping.booking_date],
@@ -45,7 +41,6 @@ function sanitizeBankMapping(mapping) {
         booking_type: [...mapping.booking_type],
         booking_amount: [...mapping.booking_amount],
         booking_date_parse_format: parseFormat,
-        booking_date_display_format: displayFormat,
     };
 }
 function safeParse(text) {
@@ -81,6 +76,17 @@ export function saveBankMapping(mapping) {
         existing.push(sanitized);
     }
     localStorage.setItem(BANK_MAPPINGS_KEY, JSON.stringify(existing, null, 2));
+}
+export function loadDisplaySettings() {
+    const parsed = safeParse(localStorage.getItem(DISPLAY_SETTINGS_KEY));
+    if (parsed && typeof parsed === "object") {
+        return sanitizeDisplaySettings(parsed);
+    }
+    return sanitizeDisplaySettings(null);
+}
+export function saveDisplaySettings(settings) {
+    const sanitized = sanitizeDisplaySettings(settings);
+    localStorage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(sanitized, null, 2));
 }
 function toUnifiedTx(value) {
     if (typeof value !== "object" || value === null) {
