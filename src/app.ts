@@ -27,12 +27,24 @@ import {
 } from "./displaySettings.js";
 import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
+import * as auth from "./auth.js";
 
 type MappingSelection = Omit<BankMapping, "bank_name">;
 
 const CONFIG_MAPPING_KEY = "mapping_to_target_schema";
 const CONFIG_DISPLAY_KEY = "display_settings";
 const CONFIG_RULES_KEY = "anonymization_rules";
+
+const mainElement = document.querySelector("main") as HTMLElement | null;
+const tokenLoginContainer = document.getElementById("tokenLoginContainer");
+const tokenForm = document.getElementById("tokenLogin") as HTMLFormElement | null;
+const tokenInputField = document.getElementById("tokenLoginForm") as HTMLInputElement | null;
+const tokenErrorElement = document.getElementById("tokenError");
+const tokenSubmitButton = tokenForm?.querySelector(
+  'button[type="submit"]',
+) as HTMLButtonElement | null;
+const requestTokenButton = document.getElementById("requestTokenButton") as HTMLButtonElement | null;
+const logoutButton = document.getElementById("logoutButton") as HTMLButtonElement | null;
 
 const fileInput = document.getElementById("csvInput") as HTMLInputElement | null;
 const bankNameInput = document.getElementById("bankName") as HTMLInputElement | null;
@@ -63,6 +75,7 @@ let anonymizedActive = false;
 let anonymizedCache: UnifiedTx[] = [];
 let lastAnonymizationWarnings: string[] = [];
 let displaySettings: DisplaySettings = loadDisplaySettings();
+let appInitialized = false;
 
 function getConfiguredRules(): AnonRule[] {
   if (rulesController) {
@@ -78,6 +91,30 @@ function assertElement<T extends HTMLElement>(value: T | null, message: string):
   }
   return value;
 }
+
+const ensuredMainElement = assertElement(mainElement, "Hauptbereich nicht gefunden");
+const ensuredTokenLoginContainer = assertElement(
+  tokenLoginContainer,
+  "Token-Anmeldecontainer nicht gefunden",
+);
+const ensuredTokenForm = assertElement(tokenForm, "Token-Anmeldeformular fehlt");
+const ensuredTokenInput = assertElement(
+  tokenInputField,
+  "Token Eingabefeld fehlt",
+);
+const ensuredTokenError = assertElement(
+  tokenErrorElement,
+  "Token Fehlermeldungsbereich fehlt",
+);
+const ensuredTokenSubmitButton = assertElement(
+  tokenSubmitButton,
+  "Token Absenden Button fehlt",
+);
+const ensuredRequestTokenButton = assertElement(
+  requestTokenButton,
+  "Token anfordern Button fehlt",
+);
+const ensuredLogoutButton = assertElement(logoutButton, "Logout Button fehlt");
 
 const ensuredFileInput = assertElement(fileInput, "CSV Eingabefeld nicht gefunden");
 const ensuredBankNameInput = assertElement(bankNameInput, "Banknamenfeld nicht gefunden");
@@ -127,6 +164,154 @@ type StatusType = "info" | "error" | "warning";
 function setStatus(message: string, type: StatusType = "info"): void {
   ensuredStatusArea.textContent = message;
   ensuredStatusArea.setAttribute("data-status", type);
+}
+
+function clearTokenError(): void {
+  ensuredTokenError.textContent = "";
+  ensuredTokenError.hidden = true;
+}
+
+function setTokenError(message: string): void {
+  ensuredTokenError.textContent = message;
+  ensuredTokenError.hidden = false;
+}
+
+function showLogin(message?: string): void {
+  ensuredMainElement.hidden = true;
+  ensuredTokenLoginContainer.hidden = false;
+  if (message) {
+    setTokenError(message);
+  } else {
+    clearTokenError();
+  }
+  ensuredTokenInput.focus();
+}
+
+function showMain(): void {
+  ensuredTokenLoginContainer.hidden = true;
+  ensuredMainElement.hidden = false;
+  clearTokenError();
+}
+
+function setTokenFormDisabled(disabled: boolean): void {
+  ensuredTokenInput.disabled = disabled;
+  ensuredTokenSubmitButton.disabled = disabled;
+  ensuredRequestTokenButton.disabled = disabled;
+}
+
+function handleLogout(): void {
+  auth.deleteTokenCookie();
+  anonymizedActive = false;
+  anonymizedCache = [];
+  transactions = [];
+  detectedHeader = null;
+  renderTransactions([]);
+  ensuredAnonymizeButton.textContent = "Anonymisieren";
+  ensuredSaveMaskedButton.disabled = true;
+  ensuredTokenInput.value = "";
+  setStatus("Bitte melden Sie sich erneut an.", "info");
+  showLogin("Sie wurden abgemeldet.");
+}
+
+function setupAuthUI(): void {
+  ensuredTokenForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void handleTokenSubmission();
+  });
+
+  ensuredRequestTokenButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    void handleTokenRequest();
+  });
+
+  ensuredLogoutButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleLogout();
+  });
+}
+
+async function handleTokenSubmission(): Promise<void> {
+  clearTokenError();
+  const rawToken = ensuredTokenInput.value.trim();
+  if (!rawToken) {
+    setTokenError("Bitte geben Sie ein Token ein.");
+    return;
+  }
+
+  setTokenFormDisabled(true);
+  try {
+    const result = await auth.validateToken(rawToken);
+    ensuredTokenInput.value = "";
+    handleAuthenticated(result.message ?? "Authentifizierung erfolgreich.");
+  } catch (error) {
+    if (error instanceof auth.AuthError) {
+      setTokenError(error.message);
+    } else if (error instanceof Error) {
+      setTokenError(error.message);
+    } else {
+      setTokenError("Unbekannter Fehler bei der Anmeldung.");
+    }
+  } finally {
+    setTokenFormDisabled(false);
+  }
+}
+
+async function handleTokenRequest(): Promise<void> {
+  clearTokenError();
+  setTokenFormDisabled(true);
+  try {
+    const result = await auth.requestNewToken();
+    ensuredTokenInput.value = "";
+    handleAuthenticated(
+      result.message ?? "Es wurde ein neues Token erstellt und gespeichert.",
+    );
+  } catch (error) {
+    if (error instanceof auth.AuthError) {
+      setTokenError(error.message);
+    } else if (error instanceof Error) {
+      setTokenError(error.message);
+    } else {
+      setTokenError("Neues Token konnte nicht angefordert werden.");
+    }
+  } finally {
+    setTokenFormDisabled(false);
+  }
+}
+
+function hydrateTransactionsFromStorage(): void {
+  transactions = loadTransactions();
+  anonymizedActive = false;
+  anonymizedCache = [];
+  lastAnonymizationWarnings = [];
+  renderTransactions(transactions);
+  ensuredAnonymizeButton.textContent = "Anonymisieren";
+  ensuredSaveMaskedButton.disabled = true;
+  const masked = loadMaskedTransactions();
+  if (masked.length > 0) {
+    setStatus("Es sind bereits anonymisierte Daten gespeichert.", "info");
+  }
+}
+
+function hydrateRulesFromStorage(): void {
+  if (!rulesController) {
+    return;
+  }
+  const { rules } = loadAnonymizationRules();
+  rulesController.setRules(rules);
+}
+
+function handleAuthenticated(message?: string): void {
+  if (!appInitialized) {
+    init();
+    appInitialized = true;
+  } else {
+    hydrateTransactionsFromStorage();
+    hydrateRulesFromStorage();
+  }
+  showMain();
+  if (message) {
+    setStatus(message, "info");
+  }
 }
 
 function createTimestampedFilename(base: string, extension: string): string {
@@ -736,12 +921,7 @@ function handleApplySingleRule(rule: AnonRule): void {
 }
 
 function init(): void {
-  transactions = loadTransactions();
-  renderTransactions(transactions);
-  const masked = loadMaskedTransactions();
-  if (masked.length > 0) {
-    setStatus("Es sind bereits anonymisierte Daten gespeichert.", "info");
-  }
+  hydrateTransactionsFromStorage();
 
   ensuredFileInput.addEventListener("change", (event) => {
     const input = event.currentTarget as HTMLInputElement;
@@ -795,8 +975,7 @@ function init(): void {
   });
 
   rulesController = buildRulesUI(ensuredRulesContainer);
-  const { rules } = loadAnonymizationRules();
-  rulesController.setRules(rules);
+  hydrateRulesFromStorage();
 
   ensuredRulesContainer.addEventListener("ruleapply", (event) => {
     const customEvent = event as CustomEvent<AnonRule>;
@@ -811,4 +990,25 @@ function init(): void {
   });
 }
 
-init();
+async function bootstrap(): Promise<void> {
+  setupAuthUI();
+
+  try {
+    await auth.ensureAuthenticated();
+    handleAuthenticated();
+  } catch (error) {
+    if (error instanceof auth.AuthError) {
+      if (error.code === "NO_TOKEN") {
+        showLogin();
+      } else {
+        showLogin(error.message);
+      }
+    } else if (error instanceof Error) {
+      showLogin(error.message);
+    } else {
+      showLogin("Authentifizierung fehlgeschlagen.");
+    }
+  }
+}
+
+void bootstrap();

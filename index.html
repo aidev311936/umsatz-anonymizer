@@ -9,7 +9,23 @@
     <script type="module" src="./dist/app.js"></script>
   </head>
   <body>
-    <main>
+    <section id="tokenLoginContainer">
+      <form id="tokenLogin" autocomplete="off">
+        <h1>Umsatz Anonymizer</h1>
+        <p>Bitte geben Sie Ihr Zugriffstoken ein, um das Tool zu verwenden.</p>
+        <label for="tokenLoginForm">Token</label>
+        <input id="tokenLoginForm" type="password" required />
+        <div class="button-row">
+          <button type="submit">Anmelden</button>
+          <button id="requestTokenButton" type="button">Neues Token anfordern</button>
+        </div>
+        <p id="tokenError" role="alert" hidden></p>
+      </form>
+    </section>
+    <main hidden>
+      <div class="button-row align-right">
+        <button id="logoutButton" type="button">Abmelden</button>
+      </div>
       <h1>Umsätze importieren &amp; anonymisieren</h1>
 
       <details class="collapsible-section" open>

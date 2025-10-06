@@ -1,0 +1,172 @@
+const TOKEN_COOKIE_NAME = "umsatz_token";
+const TOKEN_ENDPOINT = "/auth/token";
+
+export type AuthErrorCode = "NO_TOKEN" | "INVALID_TOKEN" | "NETWORK_ERROR";
+
+export class AuthError extends Error {
+  readonly code: AuthErrorCode;
+
+  constructor(code: AuthErrorCode, message: string) {
+    super(message);
+    this.name = "AuthError";
+    this.code = code;
+  }
+}
+
+interface TokenEndpointResult {
+  token?: string;
+  valid?: boolean;
+  message?: string;
+  maxAge?: number;
+  expiresIn?: number;
+  expires_in?: number;
+}
+
+export interface TokenValidationResult {
+  token: string;
+  message?: string;
+}
+
+function readCookie(name: string): string | null {
+  const cookieString = document.cookie;
+  if (!cookieString) {
+    return null;
+  }
+  const cookies = cookieString.split(";");
+  for (const cookie of cookies) {
+    const [cookieName, ...rest] = cookie.trim().split("=");
+    if (cookieName === name) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return null;
+}
+
+function resolveMaxAge(result: TokenEndpointResult): number | undefined {
+  if (typeof result.maxAge === "number") {
+    return result.maxAge;
+  }
+  if (typeof result.expiresIn === "number") {
+    return result.expiresIn;
+  }
+  if (typeof result.expires_in === "number") {
+    return result.expires_in;
+  }
+  return undefined;
+}
+
+export function getTokenCookie(): string | null {
+  return readCookie(TOKEN_COOKIE_NAME);
+}
+
+export function setTokenCookie(token: string, maxAgeSeconds?: number): void {
+  const parts = [
+    `${TOKEN_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "Secure",
+    "SameSite=Strict",
+  ];
+  if (typeof maxAgeSeconds === "number" && Number.isFinite(maxAgeSeconds)) {
+    const maxAge = Math.max(0, Math.floor(maxAgeSeconds));
+    parts.push(`Max-Age=${maxAge}`);
+  }
+  document.cookie = parts.join("; ");
+}
+
+export function deleteTokenCookie(): void {
+  document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; SameSite=Strict`;
+}
+
+async function callTokenEndpoint(
+  payload: Record<string, unknown>,
+): Promise<TokenEndpointResult> {
+  let response: Response;
+  try {
+    response = await fetch(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "include",
+    });
+  } catch {
+    throw new AuthError(
+      "NETWORK_ERROR",
+      "Verbindung zum Authentifizierungsdienst fehlgeschlagen.",
+    );
+  }
+
+  let result: TokenEndpointResult | undefined;
+  if (response.status !== 204) {
+    try {
+      result = (await response.json()) as TokenEndpointResult;
+    } catch {
+      if (response.ok) {
+        // If we received a non-JSON response but the request was OK, treat it as valid.
+        result = { valid: true };
+      } else {
+        throw new AuthError(
+          "INVALID_TOKEN",
+          "Antwort des Authentifizierungsdienstes konnte nicht gelesen werden.",
+        );
+      }
+    }
+  } else {
+    result = { valid: response.ok };
+  }
+
+  if (!response.ok) {
+    const message = result?.message ?? `Token konnte nicht validiert werden (Status ${response.status}).`;
+    throw new AuthError("INVALID_TOKEN", message);
+  }
+
+  return result ?? { valid: true };
+}
+
+export async function validateToken(token: string): Promise<TokenValidationResult> {
+  if (!token) {
+    throw new AuthError("INVALID_TOKEN", "Es wurde kein Token übermittelt.");
+  }
+
+  const result = await callTokenEndpoint({ token });
+  const isValid = result.valid ?? true;
+  if (!isValid) {
+    throw new AuthError(
+      "INVALID_TOKEN",
+      result.message ?? "Das Token ist ungültig oder abgelaufen.",
+    );
+  }
+
+  const resolvedToken = result.token ?? token;
+  const maxAge = resolveMaxAge(result);
+  setTokenCookie(resolvedToken, maxAge);
+
+  return {
+    token: resolvedToken,
+    message: result.message,
+  };
+}
+
+export async function ensureAuthenticated(): Promise<string> {
+  const token = getTokenCookie();
+  if (!token) {
+    throw new AuthError("NO_TOKEN", "Kein Zugriffstoken gefunden.");
+  }
+  const result = await validateToken(token);
+  return result.token;
+}
+
+export async function requestNewToken(): Promise<TokenValidationResult> {
+  const result = await callTokenEndpoint({ action: "generate" });
+  if (!result.token) {
+    throw new AuthError(
+      "INVALID_TOKEN",
+      result.message ?? "Es wurde kein neues Token bereitgestellt.",
+    );
+  }
+  const maxAge = resolveMaxAge(result);
+  setTokenCookie(result.token, maxAge);
+  return {
+    token: result.token,
+    message: result.message,
+  };
+}
