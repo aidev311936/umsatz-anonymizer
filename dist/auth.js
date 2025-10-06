@@ -1,5 +1,34 @@
 const TOKEN_COOKIE_NAME = "umsatz_token";
-const TOKEN_ENDPOINT = "/auth/token";
+const DEFAULT_TOKEN_ENDPOINT = "/auth/token";
+let cachedTokenEndpoint = null;
+function resolveTokenEndpoint() {
+    if (cachedTokenEndpoint) {
+        return cachedTokenEndpoint;
+    }
+    const candidates = [];
+    if (typeof window !== "undefined" && window.__AUTH_CONFIG__?.tokenEndpoint) {
+        candidates.push(window.__AUTH_CONFIG__.tokenEndpoint);
+    }
+    const body = typeof document !== "undefined" ? document.body : null;
+    if (body?.dataset?.authEndpoint) {
+        candidates.push(body.dataset.authEndpoint);
+    }
+    const meta = typeof document !== "undefined"
+        ? document.querySelector('meta[name="auth-endpoint"]')
+        : null;
+    if (meta) {
+        candidates.push(meta.getAttribute("content"));
+    }
+    for (const candidate of candidates) {
+        const trimmed = candidate?.trim();
+        if (trimmed) {
+            cachedTokenEndpoint = trimmed;
+            return trimmed;
+        }
+    }
+    cachedTokenEndpoint = DEFAULT_TOKEN_ENDPOINT;
+    return DEFAULT_TOKEN_ENDPOINT;
+}
 export class AuthError extends Error {
     constructor(code, message) {
         super(message);
@@ -53,9 +82,10 @@ export function deleteTokenCookie() {
     document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; SameSite=Strict`;
 }
 async function callTokenEndpoint(payload) {
+    const endpoint = resolveTokenEndpoint();
     let response;
     try {
-        response = await fetch(TOKEN_ENDPOINT, {
+        response = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -63,7 +93,7 @@ async function callTokenEndpoint(payload) {
         });
     }
     catch {
-        throw new AuthError("NETWORK_ERROR", "Verbindung zum Authentifizierungsdienst fehlgeschlagen.");
+        throw new AuthError("NETWORK_ERROR", `Verbindung zum Authentifizierungsdienst (${endpoint}) fehlgeschlagen.`);
     }
     let result;
     if (response.status !== 204) {

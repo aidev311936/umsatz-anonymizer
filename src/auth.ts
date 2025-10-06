@@ -1,5 +1,50 @@
 const TOKEN_COOKIE_NAME = "umsatz_token";
-const TOKEN_ENDPOINT = "/auth/token";
+
+declare global {
+  interface Window {
+    __AUTH_CONFIG__?: {
+      tokenEndpoint?: string;
+    };
+  }
+}
+
+const DEFAULT_TOKEN_ENDPOINT = "/auth/token";
+let cachedTokenEndpoint: string | null = null;
+
+function resolveTokenEndpoint(): string {
+  if (cachedTokenEndpoint) {
+    return cachedTokenEndpoint;
+  }
+
+  const candidates: Array<string | null | undefined> = [];
+
+  if (typeof window !== "undefined" && window.__AUTH_CONFIG__?.tokenEndpoint) {
+    candidates.push(window.__AUTH_CONFIG__.tokenEndpoint);
+  }
+
+  const body = typeof document !== "undefined" ? document.body : null;
+  if (body?.dataset?.authEndpoint) {
+    candidates.push(body.dataset.authEndpoint);
+  }
+
+  const meta = typeof document !== "undefined"
+    ? document.querySelector('meta[name="auth-endpoint"]')
+    : null;
+  if (meta) {
+    candidates.push(meta.getAttribute("content"));
+  }
+
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      cachedTokenEndpoint = trimmed;
+      return trimmed;
+    }
+  }
+
+  cachedTokenEndpoint = DEFAULT_TOKEN_ENDPOINT;
+  return DEFAULT_TOKEN_ENDPOINT;
+}
 
 export type AuthErrorCode = "NO_TOKEN" | "INVALID_TOKEN" | "NETWORK_ERROR";
 
@@ -80,9 +125,10 @@ export function deleteTokenCookie(): void {
 async function callTokenEndpoint(
   payload: Record<string, unknown>,
 ): Promise<TokenEndpointResult> {
+  const endpoint = resolveTokenEndpoint();
   let response: Response;
   try {
-    response = await fetch(TOKEN_ENDPOINT, {
+    response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -91,7 +137,7 @@ async function callTokenEndpoint(
   } catch {
     throw new AuthError(
       "NETWORK_ERROR",
-      "Verbindung zum Authentifizierungsdienst fehlgeschlagen.",
+      `Verbindung zum Authentifizierungsdienst (${endpoint}) fehlgeschlagen.`,
     );
   }
 
