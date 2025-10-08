@@ -216,3 +216,29 @@ export async function requestNewToken(): Promise<TokenValidationResult> {
     message: result.message,
   };
 }
+
+function resolveLogoutEndpoint(): string {
+  const tokenEndpoint = resolveTokenEndpoint();
+  try {
+    const url = new URL(tokenEndpoint, window.location.href);
+    if (url.pathname.endsWith("/token")) {
+      url.pathname = url.pathname.replace(/\/token$/, "/logout");
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
+    return new URL("/auth/logout", url).toString();
+  } catch {
+    return "/auth/logout";
+  }
+}
+
+export async function logout(): Promise<void> {
+  const endpoint = resolveLogoutEndpoint();
+  try {
+    await fetch(endpoint, { method: "POST", credentials: "include" });
+  } catch (error) {
+    console.warn("Logout request failed", error);
+  }
+  deleteTokenCookie();
+}
