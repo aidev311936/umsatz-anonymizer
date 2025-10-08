@@ -54,7 +54,7 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
    - Statisches Hosting (z. B. Render Static Site) mit den Dateien aus `dist/` bzw. `index.html`.
    - Im HTML `<head>` eine Meta-Definition ergänzen, damit das Frontend weiß, wo das Backend läuft:
      ```html
-     <meta name="backend-base-url" content="https://<your-backend-service>.onrender.com/api">
+     <meta name="backend-base-url" content="https://<your-backend-service>.onrender.com">
      ```
    - Alternativ `window.BACKEND_BASE_URL` vor Laden des Bundles setzen.
 
