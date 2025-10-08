@@ -111,14 +111,12 @@ function createApp({ db, origins = [], basePath } = {}) {
   const app = express();
   const maxPayload = process.env.MAX_PAYLOAD ?? "2mb";
   const configuredOrigins = origins.length > 0 ? origins : parseOrigins(process.env.ALLOWED_ORIGINS);
-  const allowedOrigins = new Set(
-    configuredOrigins
-      .map(normalizeOrigin)
-      .filter((value) => value.length > 0),
-  );
-  if (allowedOrigins.size > 0) {
-    allowedOrigins.add(normalizeOrigin(DEFAULT_GITHUB_PAGES_ORIGIN));
-  }
+  const normalizedConfigured = configuredOrigins
+    .map(normalizeOrigin)
+    .filter((value) => value.length > 0);
+  const allowAllOrigins = normalizedConfigured.length === 0;
+  const allowedOrigins = new Set(normalizedConfigured);
+  allowedOrigins.add(normalizeOrigin(DEFAULT_GITHUB_PAGES_ORIGIN));
   const tokenCookieName = process.env.TOKEN_COOKIE_NAME ?? "umsatz_token";
   const tokenTtlSeconds = Math.max(60, parseInt(process.env.AUTH_TOKEN_TTL ?? "" + DEFAULT_TOKEN_TTL, 10) || DEFAULT_TOKEN_TTL);
   const nodeEnv = (process.env.NODE_ENV ?? "development").toLowerCase();
@@ -130,7 +128,7 @@ function createApp({ db, origins = [], basePath } = {}) {
     const origin = req.headers.origin;
     if (origin) {
       const normalizedOrigin = normalizeOrigin(origin);
-      if (allowedOrigins.size === 0 || allowedOrigins.has(normalizedOrigin)) {
+      if (allowAllOrigins || allowedOrigins.has(normalizedOrigin)) {
         res.header("Access-Control-Allow-Origin", origin);
         res.header("Access-Control-Allow-Credentials", "true");
         res.header("Vary", "Origin");
