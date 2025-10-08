@@ -5,20 +5,23 @@ CREATE TABLE IF NOT EXISTS user_tokens (
   accessed_on TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE IF NOT EXISTS masked_transactions (
   id BIGSERIAL PRIMARY KEY,
   token TEXT NOT NULL REFERENCES user_tokens(token) ON DELETE CASCADE,
-  amount TEXT,
+  bank_name TEXT,
+  booking_date TEXT,
+  booking_date_raw TEXT,
+  booking_date_iso TEXT,
   booking_text TEXT,
+  booking_type TEXT,
+  booking_amount TEXT,
   booking_category TEXT,
-  masked_data JSONB DEFAULT '{}'::jsonb,
   created_on TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_on TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS bank_mapping (
   id BIGSERIAL PRIMARY KEY,
-  token TEXT NOT NULL REFERENCES user_tokens(token) ON DELETE CASCADE,
   bank_name TEXT NOT NULL,
   booking_date TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
   amount TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
@@ -27,7 +30,7 @@ CREATE TABLE IF NOT EXISTS bank_mapping (
   booking_date_parse_format TEXT NOT NULL DEFAULT '',
   created_on TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_on TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT bank_mapping_unique_bank_per_token UNIQUE (token, bank_name)
+  CONSTRAINT bank_mapping_unique_bank UNIQUE (bank_name)
 );
 
 CREATE OR REPLACE FUNCTION touch_user_token(p_token TEXT)
@@ -74,8 +77,8 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_transactions_updated_on
-  BEFORE UPDATE ON transactions
+CREATE TRIGGER trg_masked_transactions_updated_on
+  BEFORE UPDATE ON masked_transactions
   FOR EACH ROW
   EXECUTE FUNCTION set_row_updated_on();
 

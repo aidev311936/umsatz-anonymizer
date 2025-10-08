@@ -84,17 +84,46 @@ function createDb(pool) {
     return result.rows[0].settings;
   }
 
+  function rowToUnifiedTransaction(row) {
+    const bookingDate = typeof row.booking_date === "string" ? row.booking_date : "";
+    const rawDate =
+      typeof row.booking_date_raw === "string" && row.booking_date_raw.length > 0
+        ? row.booking_date_raw
+        : bookingDate;
+    return {
+      bank_name: typeof row.bank_name === "string" ? row.bank_name : "",
+      booking_date: bookingDate,
+      booking_date_raw: rawDate,
+      booking_date_iso:
+        typeof row.booking_date_iso === "string" && row.booking_date_iso.length > 0
+          ? row.booking_date_iso
+          : null,
+      booking_text: typeof row.booking_text === "string" ? row.booking_text : "",
+      booking_type: typeof row.booking_type === "string" ? row.booking_type : "",
+      booking_amount:
+        typeof row.booking_amount === "string"
+          ? row.booking_amount
+          : typeof row.amount === "string"
+          ? row.amount
+          : "",
+    };
+  }
+
   async function listTransactions(token) {
     const result = await pool.query(
-      `SELECT masked_data
-         FROM transactions
-        WHERE token = $1 AND booking_category <> $2
+      `SELECT bank_name,
+              booking_date,
+              booking_date_raw,
+              booking_date_iso,
+              booking_text,
+              booking_type,
+              booking_amount
+         FROM masked_transactions
+        WHERE token = $1 AND (booking_category IS NULL OR booking_category <> $2)
         ORDER BY created_on DESC, id DESC`,
       [token, MASKED_SNAPSHOT_CATEGORY],
     );
-    return result.rows
-      .map((row) => row.masked_data)
-      .filter((value) => value && typeof value === "object");
+    return result.rows.map(rowToUnifiedTransaction);
   }
 
   async function replaceTransactions(token, entries) {
@@ -102,23 +131,23 @@ function createDb(pool) {
       await client.query("BEGIN");
       try {
         await client.query(
-          "DELETE FROM transactions WHERE token = $1 AND booking_category <> $2",
+          "DELETE FROM masked_transactions WHERE token = $1 AND (booking_category IS NULL OR booking_category <> $2)",
           [token, MASKED_SNAPSHOT_CATEGORY],
         );
         if (entries.length > 0) {
           const insertText =
-            "INSERT INTO transactions(token, amount, booking_text, booking_category, masked_data) VALUES ($1, $2, $3, $4, $5::jsonb)";
+            "INSERT INTO masked_transactions(token, bank_name, booking_date, booking_date_raw, booking_date_iso, booking_text, booking_type, booking_amount, booking_category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
           for (const entry of entries) {
-            const payload = JSON.stringify(entry);
-            const amount = typeof entry.booking_amount === "string" ? entry.booking_amount : null;
-            const bookingText = typeof entry.booking_text === "string" ? entry.booking_text : null;
-            const bookingCategory = typeof entry.booking_type === "string" ? entry.booking_type : null;
             await client.query(insertText, [
               token,
-              amount,
-              bookingText,
-              bookingCategory,
-              payload,
+              typeof entry.bank_name === "string" ? entry.bank_name : null,
+              typeof entry.booking_date === "string" ? entry.booking_date : null,
+              typeof entry.booking_date_raw === "string" ? entry.booking_date_raw : null,
+              typeof entry.booking_date_iso === "string" ? entry.booking_date_iso : null,
+              typeof entry.booking_text === "string" ? entry.booking_text : null,
+              typeof entry.booking_type === "string" ? entry.booking_type : null,
+              typeof entry.booking_amount === "string" ? entry.booking_amount : null,
+              null,
             ]);
           }
         }
@@ -132,18 +161,19 @@ function createDb(pool) {
 
   async function readMaskedTransactions(token) {
     const result = await pool.query(
-      `SELECT masked_data
-         FROM transactions
+      `SELECT bank_name,
+              booking_date,
+              booking_date_raw,
+              booking_date_iso,
+              booking_text,
+              booking_type,
+              booking_amount
+         FROM masked_transactions
         WHERE token = $1 AND booking_category = $2
-        ORDER BY created_on DESC
-        LIMIT 1`,
+        ORDER BY created_on DESC, id DESC`,
       [token, MASKED_SNAPSHOT_CATEGORY],
     );
-    const payload = result.rows[0]?.masked_data;
-    if (Array.isArray(payload)) {
-      return payload;
-    }
-    return [];
+    return result.rows.map(rowToUnifiedTransaction);
   }
 
   async function replaceMaskedTransactions(token, entries) {
@@ -151,13 +181,26 @@ function createDb(pool) {
       await client.query("BEGIN");
       try {
         await client.query(
-          "DELETE FROM transactions WHERE token = $1 AND booking_category = $2",
+          "DELETE FROM masked_transactions WHERE token = $1 AND booking_category = $2",
           [token, MASKED_SNAPSHOT_CATEGORY],
         );
-        await client.query(
-          "INSERT INTO transactions(token, booking_category, masked_data) VALUES ($1, $2, $3::jsonb)",
-          [token, MASKED_SNAPSHOT_CATEGORY, JSON.stringify(entries)],
-        );
+        if (entries.length > 0) {
+          const insertText =
+            "INSERT INTO masked_transactions(token, bank_name, booking_date, booking_date_raw, booking_date_iso, booking_text, booking_type, booking_amount, booking_category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
+          for (const entry of entries) {
+            await client.query(insertText, [
+              token,
+              typeof entry.bank_name === "string" ? entry.bank_name : null,
+              typeof entry.booking_date === "string" ? entry.booking_date : null,
+              typeof entry.booking_date_raw === "string" ? entry.booking_date_raw : null,
+              typeof entry.booking_date_iso === "string" ? entry.booking_date_iso : null,
+              typeof entry.booking_text === "string" ? entry.booking_text : null,
+              typeof entry.booking_type === "string" ? entry.booking_type : null,
+              typeof entry.booking_amount === "string" ? entry.booking_amount : null,
+              MASKED_SNAPSHOT_CATEGORY,
+            ]);
+          }
+        }
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
@@ -170,9 +213,7 @@ function createDb(pool) {
     const result = await pool.query(
       `SELECT bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format
          FROM bank_mapping
-        WHERE token = $1
         ORDER BY bank_name ASC`,
-      [token],
     );
     return result.rows.map((row) => ({
       bank_name: row.bank_name,
@@ -186,9 +227,9 @@ function createDb(pool) {
 
   async function upsertBankMapping(token, mapping) {
     await pool.query(
-      `INSERT INTO bank_mapping(token, bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (token, bank_name)
+      `INSERT INTO bank_mapping(bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (bank_name)
        DO UPDATE SET
          booking_date = EXCLUDED.booking_date,
          amount = EXCLUDED.amount,
@@ -197,7 +238,6 @@ function createDb(pool) {
          booking_date_parse_format = EXCLUDED.booking_date_parse_format,
          updated_on = now()`,
       [
-        token,
         mapping.bank_name,
         mapping.booking_date,
         mapping.booking_amount,
@@ -209,11 +249,15 @@ function createDb(pool) {
   }
 
   async function clearBankMappings(token) {
-    await pool.query("DELETE FROM bank_mapping WHERE token = $1", [token]);
+    void token;
+    return;
   }
 
   async function clearTransactions(token) {
-    await pool.query("DELETE FROM transactions WHERE token = $1", [token]);
+    await pool.query(
+      "DELETE FROM masked_transactions WHERE token = $1",
+      [token],
+    );
   }
 
   return {
