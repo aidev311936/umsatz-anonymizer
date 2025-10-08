@@ -13,6 +13,104 @@ function createSpy(fn) {
   return spy;
 }
 
+function restoreEnv(original) {
+  for (const [key, value] of Object.entries(original)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+test("auth cookie switches to cross-site policy when remote origins are configured", async () => {
+  const originalEnv = {
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    AUTH_COOKIE_SECURE: process.env.AUTH_COOKIE_SECURE,
+    AUTH_COOKIE_SAMESITE: process.env.AUTH_COOKIE_SAMESITE,
+  };
+  process.env.ALLOWED_ORIGINS = "https://example.com";
+  delete process.env.AUTH_COOKIE_SECURE;
+  delete process.env.AUTH_COOKIE_SAMESITE;
+
+  const db = {
+    createToken: async (token) => ({
+      token,
+      created_on: "2024-01-01T00:00:00.000Z",
+      accessed_on: "2024-01-01T00:00:00.000Z",
+    }),
+    touchToken: async () => null,
+    tokenExists: async () => false,
+    getSettings: async () => ({}),
+    updateSettings: async () => ({}),
+    listTransactions: async () => [],
+    replaceTransactions: async () => undefined,
+    readMaskedTransactions: async () => [],
+    replaceMaskedTransactions: async () => undefined,
+    listBankMappings: async () => [],
+    upsertBankMapping: async () => undefined,
+    clearBankMappings: async () => undefined,
+    clearTransactions: async () => undefined,
+  };
+
+  try {
+    const app = createApp({ db });
+    const tokenResponse = await request(app).post("/auth/token").send({}).expect(201);
+    const issuedCookies = tokenResponse.get("set-cookie");
+    assert.ok(issuedCookies.some((cookie) => /SameSite=None/.test(cookie)));
+    assert.ok(issuedCookies.some((cookie) => /;\s*Secure/i.test(cookie)));
+
+    const logoutResponse = await request(app).post("/auth/logout").expect(204);
+    const clearedCookies = logoutResponse.get("set-cookie");
+    assert.ok(clearedCookies.some((cookie) => /SameSite=None/.test(cookie)));
+    assert.ok(clearedCookies.some((cookie) => /;\s*Secure/i.test(cookie)));
+  } finally {
+    restoreEnv(originalEnv);
+  }
+});
+
+test("auth cookie honours explicit SameSite/Secure overrides", async () => {
+  const originalEnv = {
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    AUTH_COOKIE_SECURE: process.env.AUTH_COOKIE_SECURE,
+    AUTH_COOKIE_SAMESITE: process.env.AUTH_COOKIE_SAMESITE,
+  };
+  process.env.ALLOWED_ORIGINS = "https://example.com";
+  process.env.AUTH_COOKIE_SECURE = "false";
+  process.env.AUTH_COOKIE_SAMESITE = "lax";
+
+  const db = {
+    createToken: async (token) => ({
+      token,
+      created_on: "2024-01-01T00:00:00.000Z",
+      accessed_on: "2024-01-01T00:00:00.000Z",
+    }),
+    touchToken: async () => null,
+    tokenExists: async () => false,
+    getSettings: async () => ({}),
+    updateSettings: async () => ({}),
+    listTransactions: async () => [],
+    replaceTransactions: async () => undefined,
+    readMaskedTransactions: async () => [],
+    replaceMaskedTransactions: async () => undefined,
+    listBankMappings: async () => [],
+    upsertBankMapping: async () => undefined,
+    clearBankMappings: async () => undefined,
+    clearTransactions: async () => undefined,
+  };
+
+  try {
+    const app = createApp({ db });
+    const response = await request(app).post("/auth/token").send({}).expect(201);
+    const cookies = response.get("set-cookie");
+    assert.ok(cookies.some((cookie) => /SameSite=Lax/.test(cookie)));
+    assert.ok(cookies.every((cookie) => !/SameSite=None/.test(cookie)));
+    assert.ok(cookies.every((cookie) => !/;\s*Secure/i.test(cookie)));
+  } finally {
+    restoreEnv(originalEnv);
+  }
+});
+
 test("POST /auth/token issues a new token", async () => {
   const createToken = createSpy(async (token) => ({
     token,

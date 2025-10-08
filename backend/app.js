@@ -4,6 +4,7 @@ const { randomBytes } = require("node:crypto");
 
 const DEFAULT_TOKEN_TTL = 60 * 60 * 24; // 24 hours
 const DEFAULT_GITHUB_PAGES_ORIGIN = "https://aidev311936.github.io";
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]);
 const ALLOWED_TRANSACTION_KEYS = new Set([
   "bank_name",
   "booking_date",
@@ -38,6 +39,120 @@ function normalizeOrigin(value) {
   } catch {
     return value.replace(/\/$/, "");
   }
+}
+
+function stripPort(host) {
+  if (!host) {
+    return "";
+  }
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    return end === -1 ? host.toLowerCase() : host.slice(0, end + 1).toLowerCase();
+  }
+  const idx = host.indexOf(":");
+  const base = idx === -1 ? host : host.slice(0, idx);
+  return base.toLowerCase();
+}
+
+function extractHost(origin) {
+  if (!origin) {
+    return "";
+  }
+  try {
+    const url = new URL(origin);
+    return stripPort(url.host);
+  } catch {
+    return stripPort(origin);
+  }
+}
+
+function determineBackendHost() {
+  const originEnvKeys = [
+    "BACKEND_PUBLIC_ORIGIN",
+    "BACKEND_PUBLIC_URL",
+    "PUBLIC_BACKEND_ORIGIN",
+    "PUBLIC_BACKEND_URL",
+    "BACKEND_URL",
+    "RENDER_EXTERNAL_URL",
+  ];
+  for (const key of originEnvKeys) {
+    const value = normalizeOrigin(process.env[key]);
+    if (value) {
+      const host = extractHost(value);
+      if (host) {
+        return host;
+      }
+    }
+  }
+  const hostEnvKeys = ["BACKEND_HOST", "HOST", "HOSTNAME"];
+  for (const key of hostEnvKeys) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      const host = stripPort(value.trim());
+      if (host) {
+        return host;
+      }
+    }
+  }
+  return "localhost";
+}
+
+function shouldUseCrossSitePolicy(origins, backendHost, includeDefaultOrigin) {
+  const inspected = new Set(origins);
+  if (includeDefaultOrigin) {
+    inspected.add(normalizeOrigin(DEFAULT_GITHUB_PAGES_ORIGIN));
+  }
+  const backend = stripPort(backendHost);
+  for (const origin of inspected) {
+    if (!origin) {
+      continue;
+    }
+    const host = extractHost(origin);
+    if (!host) {
+      continue;
+    }
+    if (backend && host === backend) {
+      continue;
+    }
+    const backendLocal = backend ? LOCAL_HOSTNAMES.has(backend) : true;
+    const originLocal = LOCAL_HOSTNAMES.has(host);
+    if (originLocal && backendLocal) {
+      continue;
+    }
+    if (!backend && originLocal) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function parseBooleanEnv(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "") {
+    return null;
+  }
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return null;
+}
+
+function parseSameSiteEnv(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["lax", "strict", "none"].includes(normalized)) {
+    return normalized;
+  }
+  return null;
 }
 
 function normalizeBasePath(input) {
@@ -120,8 +235,21 @@ function createApp({ db, origins = [], basePath } = {}) {
   const tokenCookieName = process.env.TOKEN_COOKIE_NAME ?? "umsatz_token";
   const tokenTtlSeconds = Math.max(60, parseInt(process.env.AUTH_TOKEN_TTL ?? "" + DEFAULT_TOKEN_TTL, 10) || DEFAULT_TOKEN_TTL);
   const nodeEnv = (process.env.NODE_ENV ?? "development").toLowerCase();
-  const secureCookies = nodeEnv === "production";
-  const sameSitePolicy = secureCookies ? "none" : "lax";
+  const backendHost = determineBackendHost();
+  const crossSiteCookiePolicy = shouldUseCrossSitePolicy(
+    normalizedConfigured,
+    backendHost,
+    nodeEnv === "production",
+  );
+  const secureOverride = parseBooleanEnv(process.env.AUTH_COOKIE_SECURE);
+  let secureCookies = secureOverride ?? (nodeEnv === "production" || crossSiteCookiePolicy);
+  let sameSitePolicy = parseSameSiteEnv(process.env.AUTH_COOKIE_SAMESITE);
+  if (!sameSitePolicy) {
+    sameSitePolicy = secureCookies || crossSiteCookiePolicy ? "none" : "lax";
+  }
+  if (sameSitePolicy === "none" && !secureCookies) {
+    secureCookies = true;
+  }
   const configuredBasePath = normalizeBasePath(basePath ?? process.env.API_BASE_PATH);
 
   app.use((req, res, next) => {
