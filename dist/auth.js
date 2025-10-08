@@ -103,6 +103,27 @@ function resolveSessionEndpoint() {
     cachedSessionEndpoint = deriveSessionEndpointFromToken(tokenEndpoint);
     return cachedSessionEndpoint;
 }
+function resolveSessionValidationEndpoint() {
+    const tokenEndpoint = resolveTokenEndpoint();
+    const normalizedTokenEndpoint = normalizeEndpointForComparison(tokenEndpoint);
+    const sessionEndpoint = resolveSessionEndpoint();
+    const normalizedSessionEndpoint = normalizeEndpointForComparison(sessionEndpoint);
+    if (normalizedSessionEndpoint &&
+        normalizedTokenEndpoint &&
+        normalizedSessionEndpoint !== normalizedTokenEndpoint) {
+        return sessionEndpoint;
+    }
+    const derivedEndpoint = deriveSessionEndpointFromToken(tokenEndpoint);
+    const normalizedDerivedEndpoint = normalizeEndpointForComparison(derivedEndpoint);
+    if (normalizedDerivedEndpoint &&
+        normalizedTokenEndpoint &&
+        normalizedDerivedEndpoint !== normalizedTokenEndpoint) {
+        cachedSessionEndpoint = derivedEndpoint;
+        return derivedEndpoint;
+    }
+    cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+    return cachedSessionEndpoint;
+}
 export class AuthError extends Error {
     constructor(code, message) {
         super(message);
@@ -196,7 +217,8 @@ export async function validateToken(token) {
     if (!token) {
         throw new AuthError("INVALID_TOKEN", "Es wurde kein Token übermittelt.");
     }
-    const result = await callAuthEndpoint(resolveSessionEndpoint(), { token });
+    const endpoint = resolveSessionValidationEndpoint();
+    const result = await callAuthEndpoint(endpoint, { token });
     const isValid = result.valid ?? true;
     if (!isValid) {
         throw new AuthError("INVALID_TOKEN", result.message ?? "Das Token ist ungültig oder abgelaufen.");

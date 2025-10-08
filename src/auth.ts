@@ -132,6 +132,37 @@ function resolveSessionEndpoint(): string {
   return cachedSessionEndpoint;
 }
 
+function resolveSessionValidationEndpoint(): string {
+  const tokenEndpoint = resolveTokenEndpoint();
+  const normalizedTokenEndpoint = normalizeEndpointForComparison(tokenEndpoint);
+
+  const sessionEndpoint = resolveSessionEndpoint();
+  const normalizedSessionEndpoint = normalizeEndpointForComparison(sessionEndpoint);
+
+  if (
+    normalizedSessionEndpoint &&
+    normalizedTokenEndpoint &&
+    normalizedSessionEndpoint !== normalizedTokenEndpoint
+  ) {
+    return sessionEndpoint;
+  }
+
+  const derivedEndpoint = deriveSessionEndpointFromToken(tokenEndpoint);
+  const normalizedDerivedEndpoint = normalizeEndpointForComparison(derivedEndpoint);
+
+  if (
+    normalizedDerivedEndpoint &&
+    normalizedTokenEndpoint &&
+    normalizedDerivedEndpoint !== normalizedTokenEndpoint
+  ) {
+    cachedSessionEndpoint = derivedEndpoint;
+    return derivedEndpoint;
+  }
+
+  cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+  return cachedSessionEndpoint;
+}
+
 export type AuthErrorCode = "NO_TOKEN" | "INVALID_TOKEN" | "NETWORK_ERROR";
 
 export class AuthError extends Error {
@@ -259,7 +290,8 @@ export async function validateToken(token: string): Promise<TokenValidationResul
     throw new AuthError("INVALID_TOKEN", "Es wurde kein Token übermittelt.");
   }
 
-  const result = await callAuthEndpoint(resolveSessionEndpoint(), { token });
+  const endpoint = resolveSessionValidationEndpoint();
+  const result = await callAuthEndpoint(endpoint, { token });
   const isValid = result.valid ?? true;
   if (!isValid) {
     throw new AuthError(
