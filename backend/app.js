@@ -167,7 +167,7 @@ function normalizeBasePath(input) {
     base = `/${base}`;
   }
   if (base.length > 1 && base.endsWith("/")) {
-    base = base.replace(/\/+$, "");
+    base = base.replace(/\/+$/, "");
   }
   return base || "/";
 }
