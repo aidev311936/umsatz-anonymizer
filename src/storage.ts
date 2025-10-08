@@ -376,3 +376,16 @@ export function importAnonymizationRules(
 
   return null;
 }
+
+export function clearPersistentData(): void {
+  const keys = [
+    BANK_MAPPINGS_KEY,
+    TRANSACTIONS_KEY,
+    TRANSACTIONS_MASKED_KEY,
+    ANON_RULES_KEY,
+    DISPLAY_SETTINGS_KEY,
+  ];
+  for (const key of keys) {
+    localStorage.removeItem(key);
+  }
+}

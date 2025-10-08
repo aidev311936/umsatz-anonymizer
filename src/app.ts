@@ -12,6 +12,7 @@ import {
   importBankMappings,
   loadMaskedTransactions,
   loadTransactions,
+  clearPersistentData,
   saveBankMapping,
   saveDisplaySettings,
   saveAnonymizationRules,
@@ -201,13 +202,18 @@ function setTokenFormDisabled(disabled: boolean): void {
 
 function handleLogout(): void {
   auth.deleteTokenCookie();
+  clearPersistentData();
   anonymizedActive = false;
   anonymizedCache = [];
+  lastAnonymizationWarnings = [];
   transactions = [];
   detectedHeader = null;
   renderTransactions([]);
   ensuredAnonymizeButton.textContent = "Anonymisieren";
   ensuredSaveMaskedButton.disabled = true;
+  displaySettings = loadDisplaySettings();
+  ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+  ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
   ensuredTokenInput.value = "";
   setStatus("Bitte melden Sie sich erneut an.", "info");
   showLogin("Sie wurden abgemeldet.");
