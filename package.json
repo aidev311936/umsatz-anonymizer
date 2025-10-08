@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "test": "npm run build"
+    "test": "npm run build",
+    "start:auth": "node server/index.js"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
