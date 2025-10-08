@@ -4,12 +4,15 @@ declare global {
   interface Window {
     __AUTH_CONFIG__?: {
       tokenEndpoint?: string;
+      sessionEndpoint?: string;
     };
   }
 }
 
 const DEFAULT_TOKEN_ENDPOINT = "/auth/token";
+const DEFAULT_SESSION_ENDPOINT = "/auth/session";
 let cachedTokenEndpoint: string | null = null;
+let cachedSessionEndpoint: string | null = null;
 
 function resolveTokenEndpoint(): string {
   if (cachedTokenEndpoint) {
@@ -44,6 +47,66 @@ function resolveTokenEndpoint(): string {
 
   cachedTokenEndpoint = DEFAULT_TOKEN_ENDPOINT;
   return DEFAULT_TOKEN_ENDPOINT;
+}
+
+function deriveSessionEndpointFromToken(tokenEndpoint: string): string {
+  try {
+    const base = typeof window !== "undefined" ? window.location.href : "http://localhost";
+    const url = new URL(tokenEndpoint, base);
+    if (url.pathname.endsWith("/token")) {
+      url.pathname = url.pathname.replace(/\/token$/, "/session");
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
+    return new URL("/auth/session", url).toString();
+  } catch {
+    if (tokenEndpoint.endsWith("/token")) {
+      return tokenEndpoint.replace(/\/token$/, "/session");
+    }
+    return DEFAULT_SESSION_ENDPOINT;
+  }
+}
+
+function resolveSessionEndpoint(): string {
+  if (cachedSessionEndpoint) {
+    return cachedSessionEndpoint;
+  }
+
+  const candidates: Array<string | null | undefined> = [];
+
+  if (typeof window !== "undefined" && window.__AUTH_CONFIG__?.sessionEndpoint) {
+    candidates.push(window.__AUTH_CONFIG__.sessionEndpoint);
+  }
+
+  const body = typeof document !== "undefined" ? document.body : null;
+  if (body?.dataset?.authSessionEndpoint) {
+    candidates.push(body.dataset.authSessionEndpoint);
+  }
+
+  const meta = typeof document !== "undefined"
+    ? document.querySelector('meta[name="auth-session-endpoint"]')
+    : null;
+  if (meta) {
+    candidates.push(meta.getAttribute("content"));
+  }
+
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      cachedSessionEndpoint = trimmed;
+      return trimmed;
+    }
+  }
+
+  const tokenEndpoint = resolveTokenEndpoint();
+  if (tokenEndpoint === DEFAULT_TOKEN_ENDPOINT) {
+    cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+    return cachedSessionEndpoint;
+  }
+
+  cachedSessionEndpoint = deriveSessionEndpointFromToken(tokenEndpoint);
+  return cachedSessionEndpoint;
 }
 
 export type AuthErrorCode = "NO_TOKEN" | "INVALID_TOKEN" | "NETWORK_ERROR";
@@ -122,10 +185,10 @@ export function deleteTokenCookie(): void {
   document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; SameSite=Strict`;
 }
 
-async function callTokenEndpoint(
+async function callAuthEndpoint(
+  endpoint: string,
   payload: Record<string, unknown>,
 ): Promise<TokenEndpointResult> {
-  const endpoint = resolveTokenEndpoint();
   let response: Response;
   try {
     response = await fetch(endpoint, {
@@ -173,7 +236,7 @@ export async function validateToken(token: string): Promise<TokenValidationResul
     throw new AuthError("INVALID_TOKEN", "Es wurde kein Token übermittelt.");
   }
 
-  const result = await callTokenEndpoint({ token });
+  const result = await callAuthEndpoint(resolveSessionEndpoint(), { token });
   const isValid = result.valid ?? true;
   if (!isValid) {
     throw new AuthError(
@@ -202,7 +265,7 @@ export async function ensureAuthenticated(): Promise<string> {
 }
 
 export async function requestNewToken(): Promise<TokenValidationResult> {
-  const result = await callTokenEndpoint({ action: "generate" });
+  const result = await callAuthEndpoint(resolveTokenEndpoint(), { action: "generate" });
   if (!result.token) {
     throw new AuthError(
       "INVALID_TOKEN",
