@@ -1,10 +1,96 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
+function resolveApiBase() {
+    const meta = document.querySelector('meta[name="backend-base-url"]');
+    const metaContent = meta?.getAttribute("content")?.trim();
+    if (metaContent) {
+        return metaContent.replace(/\/$/, "");
+    }
+    if (typeof window !== "undefined" && typeof window.BACKEND_BASE_URL === "string") {
+        return window.BACKEND_BASE_URL.replace(/\/$/, "");
+    }
+    return "";
+}
+const API_BASE_URL = resolveApiBase();
+function fireAndForget(promise, context) {
+    void promise.catch((error) => {
+        console.error(`${context} failed`, error);
+    });
+}
+async function apiRequest(path, init) {
+    const url = `${API_BASE_URL}${path}`;
+    const headers = new Headers(init?.headers);
+    if (!headers.has("Accept")) {
+        headers.set("Accept", "application/json");
+    }
+    const hasBody = init?.body != null;
+    if (hasBody && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+    }
+    const response = await fetch(url, {
+        ...init,
+        headers,
+        credentials: "include",
+    });
+    if (!response.ok) {
+        const message = await response.text().catch(() => "");
+        throw new Error(message && message.trim().length > 0
+            ? `Request to ${path} failed with status ${response.status}: ${message}`
+            : `Request to ${path} failed with status ${response.status}`);
+    }
+    return response;
+}
+async function readJson(response) {
+    const text = await response.text();
+    if (!text) {
+        return {};
+    }
+    return JSON.parse(text);
+}
 const BANK_MAPPINGS_KEY = "bank_mappings_v1";
 const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
 const DISPLAY_SETTINGS_KEY = "display_settings_v1";
 const CURRENT_RULE_VERSION = 2;
+const bankMappingsCache = [];
+let transactionsCache = [];
+let maskedTransactionsCache = [];
+let displaySettingsCache = sanitizeDisplaySettings(null);
+let settingsCache = {};
+let initialized = false;
+let initializationPromise = null;
+export async function initializeStorage() {
+    if (initialized) {
+        return;
+    }
+    if (!initializationPromise) {
+        initializationPromise = (async () => {
+            const [settings, mappings, transactions, masked] = await Promise.all([
+                fetchSettingsFromBackend(),
+                fetchBankMappingsFromBackend(),
+                fetchTransactionsFromBackend(),
+                fetchMaskedTransactionsFromBackend(),
+            ]);
+            settingsCache = settings;
+            const display = settings[DISPLAY_SETTINGS_KEY];
+            if (display && typeof display === "object") {
+                displaySettingsCache = sanitizeDisplaySettings(display);
+            }
+            else {
+                displaySettingsCache = sanitizeDisplaySettings(null);
+            }
+            bankMappingsCache.length = 0;
+            bankMappingsCache.push(...mappings);
+            transactionsCache = transactions;
+            maskedTransactionsCache = masked;
+            initialized = true;
+        })().catch((error) => {
+            initializationPromise = null;
+            throw error;
+        });
+    }
+    await initializationPromise;
+}
 function isStringArray(value) {
     return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
@@ -55,15 +141,22 @@ function safeParse(text) {
         return null;
     }
 }
-export function loadBankMappings() {
-    const parsed = safeParse(localStorage.getItem(BANK_MAPPINGS_KEY));
-    if (!Array.isArray(parsed)) {
-        return [];
-    }
-    return parsed
+async function fetchBankMappingsFromBackend() {
+    const response = await apiRequest("/bank-mapping");
+    const payload = await readJson(response);
+    const entries = Array.isArray(payload.mappings) ? payload.mappings : [];
+    return entries
         .map(toBankMapping)
         .filter((entry) => entry !== null)
         .map(sanitizeBankMapping);
+}
+async function fetchSettingsFromBackend() {
+    const response = await apiRequest("/settings");
+    const payload = await readJson(response);
+    return payload.settings ?? {};
+}
+export function loadBankMappings() {
+    return bankMappingsCache.map(sanitizeBankMapping);
 }
 export function importBankMappings(raw) {
     if (!Array.isArray(raw)) {
@@ -73,7 +166,12 @@ export function importBankMappings(raw) {
         .map(toBankMapping)
         .filter((entry) => entry !== null)
         .map(sanitizeBankMapping);
-    localStorage.setItem(BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+    bankMappingsCache.length = 0;
+    bankMappingsCache.push(...sanitized);
+    fireAndForget(Promise.all(sanitized.map((entry) => apiRequest("/bank-mapping", {
+        method: "POST",
+        body: JSON.stringify(entry),
+    }))), "importBankMappings");
     return sanitized;
 }
 export function saveBankMapping(mapping) {
@@ -81,23 +179,27 @@ export function saveBankMapping(mapping) {
     const existing = loadBankMappings();
     const index = existing.findIndex((entry) => entry.bank_name === sanitized.bank_name);
     if (index >= 0) {
-        existing[index] = sanitized;
+        bankMappingsCache[index] = sanitized;
     }
     else {
-        existing.push(sanitized);
+        bankMappingsCache.push(sanitized);
     }
-    localStorage.setItem(BANK_MAPPINGS_KEY, JSON.stringify(existing, null, 2));
+    fireAndForget(apiRequest("/bank-mapping", {
+        method: "POST",
+        body: JSON.stringify(sanitized),
+    }), "saveBankMapping");
 }
 export function loadDisplaySettings() {
-    const parsed = safeParse(localStorage.getItem(DISPLAY_SETTINGS_KEY));
-    if (parsed && typeof parsed === "object") {
-        return sanitizeDisplaySettings(parsed);
-    }
-    return sanitizeDisplaySettings(null);
+    return sanitizeDisplaySettings(displaySettingsCache);
 }
 export function saveDisplaySettings(settings) {
     const sanitized = sanitizeDisplaySettings(settings);
-    localStorage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(sanitized, null, 2));
+    displaySettingsCache = sanitized;
+    settingsCache = { ...settingsCache, [DISPLAY_SETTINGS_KEY]: sanitized };
+    fireAndForget(apiRequest("/settings", {
+        method: "PUT",
+        body: JSON.stringify(settingsCache),
+    }), "saveDisplaySettings");
 }
 function toUnifiedTx(value) {
     if (typeof value !== "object" || value === null) {
@@ -169,44 +271,64 @@ function transactionTimestamp(tx) {
 function sortTransactions(entries) {
     return [...entries].sort((a, b) => transactionTimestamp(b) - transactionTimestamp(a));
 }
-function persistTransactions(key, entries) {
+async function fetchTransactionsFromBackend() {
+    const response = await apiRequest("/transactions");
+    const payload = await readJson(response);
+    const parsed = Array.isArray(payload.transactions) ? payload.transactions : [];
+    const normalized = parsed
+        .map(toUnifiedTx)
+        .filter((entry) => entry !== null)
+        .map(sanitizeTransaction);
+    return sortTransactions(normalized);
+}
+async function fetchMaskedTransactionsFromBackend() {
+    const response = await apiRequest("/transactions/masked");
+    const payload = await readJson(response);
+    const parsed = Array.isArray(payload.transactions) ? payload.transactions : [];
+    const normalized = parsed
+        .map(toUnifiedTx)
+        .filter((entry) => entry !== null)
+        .map(sanitizeTransaction);
+    return sortTransactions(normalized);
+}
+function updateTransactionsCache(entries) {
     const sanitized = entries.map(sanitizeTransaction);
-    const sorted = sortTransactions(sanitized);
-    localStorage.setItem(key, JSON.stringify(sorted, null, 2));
+    transactionsCache = sortTransactions(sanitized);
+    return [...transactionsCache];
+}
+function updateMaskedTransactionsCache(entries) {
+    const sanitized = entries.map(sanitizeTransaction);
+    maskedTransactionsCache = sortTransactions(sanitized);
+    return [...maskedTransactionsCache];
 }
 export function loadTransactions() {
-    const parsed = safeParse(localStorage.getItem(TRANSACTIONS_KEY));
-    if (!Array.isArray(parsed)) {
-        return [];
-    }
-    const normalized = parsed
-        .map(toUnifiedTx)
-        .filter((entry) => entry !== null)
-        .map(sanitizeTransaction);
-    return sortTransactions(normalized);
+    return [...transactionsCache];
 }
 export function saveTransactions(entries) {
-    persistTransactions(TRANSACTIONS_KEY, entries);
+    const updated = updateTransactionsCache(entries);
+    fireAndForget(apiRequest("/transactions", {
+        method: "POST",
+        body: JSON.stringify({ transactions: updated }),
+    }), "saveTransactions");
 }
 export function appendTransactions(entries) {
-    const current = loadTransactions();
-    const combined = current.concat(entries.map(sanitizeTransaction));
-    persistTransactions(TRANSACTIONS_KEY, combined);
-    return sortTransactions(combined);
+    const combined = transactionsCache.concat(entries.map(sanitizeTransaction));
+    const updated = updateTransactionsCache(combined);
+    fireAndForget(apiRequest("/transactions", {
+        method: "POST",
+        body: JSON.stringify({ transactions: updated }),
+    }), "appendTransactions");
+    return updated;
 }
 export function loadMaskedTransactions() {
-    const parsed = safeParse(localStorage.getItem(TRANSACTIONS_MASKED_KEY));
-    if (!Array.isArray(parsed)) {
-        return [];
-    }
-    const normalized = parsed
-        .map(toUnifiedTx)
-        .filter((entry) => entry !== null)
-        .map(sanitizeTransaction);
-    return sortTransactions(normalized);
+    return [...maskedTransactionsCache];
 }
 export function saveMaskedTransactions(entries) {
-    persistTransactions(TRANSACTIONS_MASKED_KEY, entries);
+    const updated = updateMaskedTransactionsCache(entries);
+    fireAndForget(apiRequest("/transactions/masked", {
+        method: "POST",
+        body: JSON.stringify({ transactions: updated }),
+    }), "saveMaskedTransactions");
 }
 function isAnonRule(value) {
     if (typeof value !== "object" || value === null) {
@@ -317,6 +439,16 @@ export function importAnonymizationRules(raw) {
     return null;
 }
 export function clearPersistentData() {
+    transactionsCache = [];
+    maskedTransactionsCache = [];
+    bankMappingsCache.length = 0;
+    displaySettingsCache = sanitizeDisplaySettings(null);
+    settingsCache = {};
+    initialized = false;
+    initializationPromise = null;
+    fireAndForget(apiRequest("/storage", {
+        method: "DELETE",
+    }), "clearPersistentData");
     const keys = [
         BANK_MAPPINGS_KEY,
         TRANSACTIONS_KEY,

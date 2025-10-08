@@ -3,7 +3,7 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, initializeStorage, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
 import { formatBookingAmount, formatTransactionsForDisplay, sanitizeDisplaySettings, } from "./displaySettings.js";
@@ -122,7 +122,7 @@ function setTokenFormDisabled(disabled) {
     ensuredRequestTokenButton.disabled = disabled;
 }
 function handleLogout() {
-    auth.deleteTokenCookie();
+    void auth.logout();
     clearPersistentData();
     anonymizedActive = false;
     anonymizedCache = [];
@@ -164,6 +164,7 @@ async function handleTokenSubmission() {
     try {
         const result = await auth.validateToken(rawToken);
         ensuredTokenInput.value = "";
+        await initializeStorage();
         handleAuthenticated(result.message ?? "Authentifizierung erfolgreich.");
     }
     catch (error) {
@@ -187,6 +188,7 @@ async function handleTokenRequest() {
     try {
         const result = await auth.requestNewToken();
         ensuredTokenInput.value = "";
+        await initializeStorage();
         handleAuthenticated(result.message ?? "Es wurde ein neues Token erstellt und gespeichert.");
     }
     catch (error) {
@@ -225,6 +227,9 @@ function hydrateRulesFromStorage() {
     rulesController.setRules(rules);
 }
 function handleAuthenticated(message) {
+    displaySettings = loadDisplaySettings();
+    ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+    ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
     if (!appInitialized) {
         init();
         appInitialized = true;
@@ -847,6 +852,7 @@ async function bootstrap() {
     setupAuthUI();
     try {
         await auth.ensureAuthenticated();
+        await initializeStorage();
         handleAuthenticated();
     }
     catch (error) {

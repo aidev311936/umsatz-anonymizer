@@ -1,6 +1,23 @@
 const TOKEN_COOKIE_NAME = "umsatz_token";
 const DEFAULT_TOKEN_ENDPOINT = "/auth/token";
+const DEFAULT_SESSION_ENDPOINT = "/auth/session";
 let cachedTokenEndpoint = null;
+let cachedSessionEndpoint = null;
+function normalizeEndpointForComparison(endpoint) {
+    if (!endpoint) {
+        return "";
+    }
+    try {
+        const base = typeof window !== "undefined" ? window.location.href : "http://localhost";
+        const url = new URL(endpoint, base);
+        url.search = "";
+        url.hash = "";
+        return url.toString().replace(/\/$/, "");
+    }
+    catch {
+        return endpoint.trim().replace(/\/$/, "");
+    }
+}
 function resolveTokenEndpoint() {
     if (cachedTokenEndpoint) {
         return cachedTokenEndpoint;
@@ -28,6 +45,84 @@ function resolveTokenEndpoint() {
     }
     cachedTokenEndpoint = DEFAULT_TOKEN_ENDPOINT;
     return DEFAULT_TOKEN_ENDPOINT;
+}
+function deriveSessionEndpointFromToken(tokenEndpoint) {
+    try {
+        const base = typeof window !== "undefined" ? window.location.href : "http://localhost";
+        const url = new URL(tokenEndpoint, base);
+        if (url.pathname.endsWith("/token")) {
+            url.pathname = url.pathname.replace(/\/token$/, "/session");
+            url.search = "";
+            url.hash = "";
+            return url.toString();
+        }
+        return new URL("/auth/session", url).toString();
+    }
+    catch {
+        if (tokenEndpoint.endsWith("/token")) {
+            return tokenEndpoint.replace(/\/token$/, "/session");
+        }
+        return DEFAULT_SESSION_ENDPOINT;
+    }
+}
+function resolveSessionEndpoint() {
+    if (cachedSessionEndpoint) {
+        return cachedSessionEndpoint;
+    }
+    const candidates = [];
+    if (typeof window !== "undefined" && window.__AUTH_CONFIG__?.sessionEndpoint) {
+        candidates.push(window.__AUTH_CONFIG__.sessionEndpoint);
+    }
+    const body = typeof document !== "undefined" ? document.body : null;
+    if (body?.dataset?.authSessionEndpoint) {
+        candidates.push(body.dataset.authSessionEndpoint);
+    }
+    const meta = typeof document !== "undefined"
+        ? document.querySelector('meta[name="auth-session-endpoint"]')
+        : null;
+    if (meta) {
+        candidates.push(meta.getAttribute("content"));
+    }
+    const tokenEndpoint = resolveTokenEndpoint();
+    const normalizedTokenEndpoint = normalizeEndpointForComparison(tokenEndpoint);
+    for (const candidate of candidates) {
+        const trimmed = candidate?.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const normalizedCandidate = normalizeEndpointForComparison(trimmed);
+        if (normalizedCandidate && normalizedCandidate !== normalizedTokenEndpoint) {
+            cachedSessionEndpoint = trimmed;
+            return cachedSessionEndpoint;
+        }
+    }
+    if (tokenEndpoint === DEFAULT_TOKEN_ENDPOINT) {
+        cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+        return cachedSessionEndpoint;
+    }
+    cachedSessionEndpoint = deriveSessionEndpointFromToken(tokenEndpoint);
+    return cachedSessionEndpoint;
+}
+function resolveSessionValidationEndpoint() {
+    const tokenEndpoint = resolveTokenEndpoint();
+    const normalizedTokenEndpoint = normalizeEndpointForComparison(tokenEndpoint);
+    const sessionEndpoint = resolveSessionEndpoint();
+    const normalizedSessionEndpoint = normalizeEndpointForComparison(sessionEndpoint);
+    if (normalizedSessionEndpoint &&
+        normalizedTokenEndpoint &&
+        normalizedSessionEndpoint !== normalizedTokenEndpoint) {
+        return sessionEndpoint;
+    }
+    const derivedEndpoint = deriveSessionEndpointFromToken(tokenEndpoint);
+    const normalizedDerivedEndpoint = normalizeEndpointForComparison(derivedEndpoint);
+    if (normalizedDerivedEndpoint &&
+        normalizedTokenEndpoint &&
+        normalizedDerivedEndpoint !== normalizedTokenEndpoint) {
+        cachedSessionEndpoint = derivedEndpoint;
+        return derivedEndpoint;
+    }
+    cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+    return cachedSessionEndpoint;
 }
 export class AuthError extends Error {
     constructor(code, message) {
@@ -81,8 +176,7 @@ export function setTokenCookie(token, maxAgeSeconds) {
 export function deleteTokenCookie() {
     document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; SameSite=Strict`;
 }
-async function callTokenEndpoint(payload) {
-    const endpoint = resolveTokenEndpoint();
+async function callAuthEndpoint(endpoint, payload) {
     let response;
     try {
         response = await fetch(endpoint, {
@@ -123,7 +217,8 @@ export async function validateToken(token) {
     if (!token) {
         throw new AuthError("INVALID_TOKEN", "Es wurde kein Token übermittelt.");
     }
-    const result = await callTokenEndpoint({ token });
+    const endpoint = resolveSessionValidationEndpoint();
+    const result = await callAuthEndpoint(endpoint, { token });
     const isValid = result.valid ?? true;
     if (!isValid) {
         throw new AuthError("INVALID_TOKEN", result.message ?? "Das Token ist ungültig oder abgelaufen.");
@@ -145,7 +240,7 @@ export async function ensureAuthenticated() {
     return result.token;
 }
 export async function requestNewToken() {
-    const result = await callTokenEndpoint({ action: "generate" });
+    const result = await callAuthEndpoint(resolveTokenEndpoint(), { action: "generate" });
     if (!result.token) {
         throw new AuthError("INVALID_TOKEN", result.message ?? "Es wurde kein neues Token bereitgestellt.");
     }
@@ -155,4 +250,30 @@ export async function requestNewToken() {
         token: result.token,
         message: result.message,
     };
+}
+function resolveLogoutEndpoint() {
+    const tokenEndpoint = resolveTokenEndpoint();
+    try {
+        const url = new URL(tokenEndpoint, window.location.href);
+        if (url.pathname.endsWith("/token")) {
+            url.pathname = url.pathname.replace(/\/token$/, "/logout");
+            url.search = "";
+            url.hash = "";
+            return url.toString();
+        }
+        return new URL("/auth/logout", url).toString();
+    }
+    catch {
+        return "/auth/logout";
+    }
+}
+export async function logout() {
+    const endpoint = resolveLogoutEndpoint();
+    try {
+        await fetch(endpoint, { method: "POST", credentials: "include" });
+    }
+    catch (error) {
+        console.warn("Logout request failed", error);
+    }
+    deleteTokenCookie();
 }

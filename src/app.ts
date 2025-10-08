@@ -5,6 +5,7 @@ import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
 import {
   appendTransactions,
+  initializeStorage,
   loadDisplaySettings,
   loadAnonymizationRules,
   loadBankMappings,
@@ -201,7 +202,7 @@ function setTokenFormDisabled(disabled: boolean): void {
 }
 
 function handleLogout(): void {
-  auth.deleteTokenCookie();
+  void auth.logout();
   clearPersistentData();
   anonymizedActive = false;
   anonymizedCache = [];
@@ -248,6 +249,7 @@ async function handleTokenSubmission(): Promise<void> {
   try {
     const result = await auth.validateToken(rawToken);
     ensuredTokenInput.value = "";
+    await initializeStorage();
     handleAuthenticated(result.message ?? "Authentifizierung erfolgreich.");
   } catch (error) {
     if (error instanceof auth.AuthError) {
@@ -268,6 +270,7 @@ async function handleTokenRequest(): Promise<void> {
   try {
     const result = await auth.requestNewToken();
     ensuredTokenInput.value = "";
+    await initializeStorage();
     handleAuthenticated(
       result.message ?? "Es wurde ein neues Token erstellt und gespeichert.",
     );
@@ -307,6 +310,9 @@ function hydrateRulesFromStorage(): void {
 }
 
 function handleAuthenticated(message?: string): void {
+  displaySettings = loadDisplaySettings();
+  ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+  ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
   if (!appInitialized) {
     init();
     appInitialized = true;
@@ -1001,6 +1007,7 @@ async function bootstrap(): Promise<void> {
 
   try {
     await auth.ensureAuthenticated();
+    await initializeStorage();
     handleAuthenticated();
   } catch (error) {
     if (error instanceof auth.AuthError) {
