@@ -42,6 +42,10 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
      - `TOKEN_COOKIE_NAME` – optional (Default `umsatz_token`)
      - `AUTH_TOKEN_TTL` – optional Gültigkeitsdauer der Tokens in Sekunden (Default 86400)
      - `ALLOWED_ORIGINS` – Komma-separierte Liste der Frontend-URLs, die Cookies senden dürfen
+     - `BACKEND_PUBLIC_ORIGIN` – optional, falls die öffentliche Backend-URL nicht automatisch erkannt wird (Render setzt `RENDER_EXTERNAL_URL` bereits passend)
+     - `AUTH_COOKIE_SECURE` / `AUTH_COOKIE_SAMESITE` – optionale Overrides für Spezialfälle (z. B. Staging ohne HTTPS)
+
+   > **Hinweis:** Sobald eine fremde Origin hinterlegt ist, setzt das Backend Cookies automatisch mit `Secure` + `SameSite=None`. Render liefert über `RENDER_EXTERNAL_URL` die eigene Service-URL, wodurch die Erkennung ohne weitere Konfiguration funktioniert.
 
 3. **Migrationen einspielen**
    - Über Render „Shell“ oder lokal mit `psql` verbinden:
@@ -82,8 +86,11 @@ Zum Ausführen: `npm run test` (nach erfolgreichem `npm install`).
 | `TOKEN_COOKIE_NAME`  | Name des Auth-Cookies (Default `umsatz_token`)           |
 | `AUTH_TOKEN_TTL`     | Token-Gültigkeit in Sekunden (min. 60, Default 86400)    |
 | `ALLOWED_ORIGINS`    | Komma-separierte Liste erlaubter Origins für CORS        |
+| `BACKEND_PUBLIC_ORIGIN` | Optional: Öffentliche Origin des Backends (falls automatische Erkennung über `RENDER_EXTERNAL_URL`/Host-Header nicht möglich) |
 | `API_BASE_PATH`      | Optionaler Prefix (z. B. `/api`); Routen bleiben zusätzlich ohne Prefix erreichbar |
 | `MAX_PAYLOAD`        | Optionales Limit für JSON-Bodies (z. B. `2mb`)           |
+| `AUTH_COOKIE_SECURE` | Optionaler Override (`true`/`false`) für das `Secure`-Flag des Auth-Cookies |
+| `AUTH_COOKIE_SAMESITE` | Optionaler Override (`lax`/`strict`/`none`) für `SameSite` des Auth-Cookies |
 
 ## Hinweis zu Storage-Initialisierung
 
