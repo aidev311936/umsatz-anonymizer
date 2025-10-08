@@ -123,6 +123,7 @@ function createApp({ db, origins = [], basePath } = {}) {
   const tokenTtlSeconds = Math.max(60, parseInt(process.env.AUTH_TOKEN_TTL ?? "" + DEFAULT_TOKEN_TTL, 10) || DEFAULT_TOKEN_TTL);
   const nodeEnv = (process.env.NODE_ENV ?? "development").toLowerCase();
   const secureCookies = nodeEnv === "production";
+  const sameSitePolicy = secureCookies ? "none" : "lax";
   const configuredBasePath = normalizeBasePath(basePath ?? process.env.API_BASE_PATH);
 
   app.use((req, res, next) => {
@@ -152,7 +153,7 @@ function createApp({ db, origins = [], basePath } = {}) {
   function setAuthCookie(res, token) {
     res.cookie(tokenCookieName, token, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: sameSitePolicy,
       secure: secureCookies,
       maxAge: tokenTtlSeconds * 1000,
       path: "/",
@@ -218,7 +219,7 @@ function createApp({ db, origins = [], basePath } = {}) {
       asyncHandler(async (req, res) => {
         res.clearCookie(tokenCookieName, {
           httpOnly: true,
-          sameSite: "lax",
+          sameSite: sameSitePolicy,
           secure: secureCookies,
           path: "/",
         });
