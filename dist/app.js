@@ -3,7 +3,7 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
 import { formatBookingAmount, formatTransactionsForDisplay, sanitizeDisplaySettings, } from "./displaySettings.js";
@@ -123,13 +123,18 @@ function setTokenFormDisabled(disabled) {
 }
 function handleLogout() {
     auth.deleteTokenCookie();
+    clearPersistentData();
     anonymizedActive = false;
     anonymizedCache = [];
+    lastAnonymizationWarnings = [];
     transactions = [];
     detectedHeader = null;
     renderTransactions([]);
     ensuredAnonymizeButton.textContent = "Anonymisieren";
     ensuredSaveMaskedButton.disabled = true;
+    displaySettings = loadDisplaySettings();
+    ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+    ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
     ensuredTokenInput.value = "";
     setStatus("Bitte melden Sie sich erneut an.", "info");
     showLogin("Sie wurden abgemeldet.");
