@@ -54,7 +54,7 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
    - Statisches Hosting (z. B. Render Static Site) mit den Dateien aus `dist/` bzw. `index.html`.
    - Im HTML `<head>` eine Meta-Definition ergänzen, damit das Frontend weiß, wo das Backend läuft:
      ```html
-     <meta name="backend-base-url" content="https://<your-backend-service>.onrender.com">
+     <meta name="backend-base-url" content="https://<your-backend-service>.onrender.com/api">
      ```
    - Alternativ `window.BACKEND_BASE_URL` vor Laden des Bundles setzen.
 
@@ -82,6 +82,7 @@ Zum Ausführen: `npm run test` (nach erfolgreichem `npm install`).
 | `TOKEN_COOKIE_NAME`  | Name des Auth-Cookies (Default `umsatz_token`)           |
 | `AUTH_TOKEN_TTL`     | Token-Gültigkeit in Sekunden (min. 60, Default 86400)    |
 | `ALLOWED_ORIGINS`    | Komma-separierte Liste erlaubter Origins für CORS        |
+| `API_BASE_PATH`      | Optionaler Prefix (z. B. `/api`); Routen bleiben zusätzlich ohne Prefix erreichbar |
 | `MAX_PAYLOAD`        | Optionales Limit für JSON-Bodies (z. B. `2mb`)           |
 
 ## Hinweis zu Storage-Initialisierung

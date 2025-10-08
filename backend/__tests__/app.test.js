@@ -162,3 +162,44 @@ test("POST /transactions stores sanitized entries", async () => {
   assert.equal(stored.length, 1);
   assert.deepEqual(stored[0], payload.transactions[0]);
 });
+
+test("routes are reachable under configured API base path", async () => {
+  let latestToken = "";
+  const db = {
+    createToken: async (token) => {
+      latestToken = token;
+      return {
+        token,
+        created_on: "2024-01-01T00:00:00.000Z",
+        accessed_on: "2024-01-01T00:00:00.000Z",
+      };
+    },
+    touchToken: async () => null,
+    tokenExists: async (token) => token === latestToken,
+    getSettings: async () => ({ foo: "bar" }),
+    updateSettings: async () => ({}),
+    listTransactions: async () => [],
+    replaceTransactions: async () => undefined,
+    readMaskedTransactions: async () => [],
+    replaceMaskedTransactions: async () => undefined,
+    listBankMappings: async () => [],
+    upsertBankMapping: async () => undefined,
+    clearBankMappings: async () => undefined,
+    clearTransactions: async () => undefined,
+  };
+
+  const app = createApp({ db, basePath: "/api" });
+  const tokenResponse = await request(app).post("/api/auth/token").send({}).expect(201);
+  const token = tokenResponse.body.token;
+  assert.ok(token);
+
+  await request(app)
+    .get("/api/settings")
+    .set("Cookie", `umsatz_token=${token}`)
+    .expect(200, { settings: { foo: "bar" } });
+
+  await request(app)
+    .get("/settings")
+    .set("Cookie", `umsatz_token=${token}`)
+    .expect(200, { settings: { foo: "bar" } });
+});

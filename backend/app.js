@@ -3,6 +3,7 @@ const cookieParser = require("cookie-parser");
 const { randomBytes } = require("node:crypto");
 
 const DEFAULT_TOKEN_TTL = 60 * 60 * 24; // 24 hours
+const DEFAULT_GITHUB_PAGES_ORIGIN = "https://aidev311936.github.io";
 const ALLOWED_TRANSACTION_KEYS = new Set([
   "bank_name",
   "booking_date",
@@ -20,7 +21,40 @@ function parseOrigins(input) {
   return input
     .split(",")
     .map((value) => value.trim())
+    .map(normalizeOrigin)
     .filter((value) => value.length > 0);
+}
+
+function normalizeOrigin(value) {
+  if (!value) {
+    return "";
+  }
+  try {
+    const url = new URL(value);
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value.replace(/\/$/, "");
+  }
+}
+
+function normalizeBasePath(input) {
+  if (!input) {
+    return "/";
+  }
+  let base = input.trim();
+  if (base.length === 0) {
+    return "/";
+  }
+  if (!base.startsWith("/")) {
+    base = `/${base}`;
+  }
+  if (base.length > 1 && base.endsWith("/")) {
+    base = base.replace(/\/+$, "");
+  }
+  return base || "/";
 }
 
 function isUnifiedTransaction(value) {
@@ -73,21 +107,35 @@ function asyncHandler(handler) {
   };
 }
 
-function createApp({ db, origins = [] }) {
+function createApp({ db, origins = [], basePath } = {}) {
   const app = express();
   const maxPayload = process.env.MAX_PAYLOAD ?? "2mb";
-  const allowedOrigins = new Set(origins.length > 0 ? origins : parseOrigins(process.env.ALLOWED_ORIGINS));
+  const configuredOrigins = origins.length > 0 ? origins : parseOrigins(process.env.ALLOWED_ORIGINS);
+  const allowedOrigins = new Set(
+    configuredOrigins
+      .map(normalizeOrigin)
+      .filter((value) => value.length > 0),
+  );
+  if (allowedOrigins.size > 0) {
+    allowedOrigins.add(normalizeOrigin(DEFAULT_GITHUB_PAGES_ORIGIN));
+  }
   const tokenCookieName = process.env.TOKEN_COOKIE_NAME ?? "umsatz_token";
   const tokenTtlSeconds = Math.max(60, parseInt(process.env.AUTH_TOKEN_TTL ?? "" + DEFAULT_TOKEN_TTL, 10) || DEFAULT_TOKEN_TTL);
   const nodeEnv = (process.env.NODE_ENV ?? "development").toLowerCase();
   const secureCookies = nodeEnv === "production";
+  const configuredBasePath = normalizeBasePath(basePath ?? process.env.API_BASE_PATH);
 
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && (allowedOrigins.size === 0 || allowedOrigins.has(origin))) {
-      res.header("Access-Control-Allow-Origin", origin);
+    if (origin) {
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (allowedOrigins.size === 0 || allowedOrigins.has(normalizedOrigin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Access-Control-Allow-Credentials", "true");
+        res.header("Vary", "Origin");
+      }
+    } else if (allowedOrigins.size === 0) {
       res.header("Access-Control-Allow-Credentials", "true");
-      res.header("Vary", "Origin");
     }
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type");
@@ -126,165 +174,177 @@ function createApp({ db, origins = [] }) {
     next();
   }
 
-  app.post(
-    "/auth/token",
-    asyncHandler(async (req, res) => {
-      const token = randomBytes(32).toString("base64url");
-      const record = await db.createToken(token);
-      setAuthCookie(res, token);
-      res.status(201).json({
-        token,
-        created_on: record?.created_on ?? null,
-        accessed_on: record?.accessed_on ?? null,
-        maxAge: tokenTtlSeconds,
-      });
-    }),
-  );
+  function registerRoutes(router) {
+    router.post(
+      "/auth/token",
+      asyncHandler(async (req, res) => {
+        const token = randomBytes(32).toString("base64url");
+        const record = await db.createToken(token);
+        setAuthCookie(res, token);
+        res.status(201).json({
+          token,
+          created_on: record?.created_on ?? null,
+          accessed_on: record?.accessed_on ?? null,
+          maxAge: tokenTtlSeconds,
+        });
+      }),
+    );
 
-  app.post(
-    "/auth/session",
-    asyncHandler(async (req, res) => {
-      const supplied = typeof req.body?.token === "string" ? req.body.token.trim() : req.cookies[tokenCookieName];
-      if (!supplied) {
-        res.status(400).json({ error: "TOKEN_REQUIRED" });
-        return;
-      }
-      const record = await db.touchToken(supplied);
-      if (!record) {
-        res.status(401).json({ error: "INVALID_TOKEN" });
-        return;
-      }
-      setAuthCookie(res, supplied);
-      res.json({
-        token: supplied,
-        created_on: record.created_on,
-        accessed_on: record.accessed_on,
-        maxAge: tokenTtlSeconds,
-      });
-    }),
-  );
+    router.post(
+      "/auth/session",
+      asyncHandler(async (req, res) => {
+        const supplied = typeof req.body?.token === "string" ? req.body.token.trim() : req.cookies[tokenCookieName];
+        if (!supplied) {
+          res.status(400).json({ error: "TOKEN_REQUIRED" });
+          return;
+        }
+        const record = await db.touchToken(supplied);
+        if (!record) {
+          res.status(401).json({ error: "INVALID_TOKEN" });
+          return;
+        }
+        setAuthCookie(res, supplied);
+        res.json({
+          token: supplied,
+          created_on: record.created_on,
+          accessed_on: record.accessed_on,
+          maxAge: tokenTtlSeconds,
+        });
+      }),
+    );
 
-  app.post(
-    "/auth/logout",
-    asyncHandler(async (req, res) => {
-      res.clearCookie(tokenCookieName, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: secureCookies,
-        path: "/",
-      });
-      res.status(204).end();
-    }),
-  );
+    router.post(
+      "/auth/logout",
+      asyncHandler(async (req, res) => {
+        res.clearCookie(tokenCookieName, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: secureCookies,
+          path: "/",
+        });
+        res.status(204).end();
+      }),
+    );
 
-  app.get(
-    "/settings",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const settings = await db.getSettings(req.authToken);
-      res.json({ settings });
-    }),
-  );
+    router.get(
+      "/settings",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const settings = await db.getSettings(req.authToken);
+        res.json({ settings });
+      }),
+    );
 
-  app.put(
-    "/settings",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      if (typeof req.body !== "object" || req.body === null) {
-        res.status(400).json({ error: "INVALID_SETTINGS" });
-        return;
-      }
-      const saved = await db.updateSettings(req.authToken, req.body);
-      if (!saved) {
-        res.status(404).json({ error: "TOKEN_NOT_FOUND" });
-        return;
-      }
-      res.json({ settings: saved });
-    }),
-  );
+    router.put(
+      "/settings",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        if (typeof req.body !== "object" || req.body === null) {
+          res.status(400).json({ error: "INVALID_SETTINGS" });
+          return;
+        }
+        const saved = await db.updateSettings(req.authToken, req.body);
+        if (!saved) {
+          res.status(404).json({ error: "TOKEN_NOT_FOUND" });
+          return;
+        }
+        res.json({ settings: saved });
+      }),
+    );
 
-  app.get(
-    "/transactions",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const transactions = await db.listTransactions(req.authToken);
-      res.json({ transactions });
-    }),
-  );
+    router.get(
+      "/transactions",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const transactions = await db.listTransactions(req.authToken);
+        res.json({ transactions });
+      }),
+    );
 
-  app.post(
-    "/transactions",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const entries = Array.isArray(req.body?.transactions) ? req.body.transactions : [];
-      const sanitized = entries.filter(isUnifiedTransaction);
-      if (sanitized.length !== entries.length) {
-        res.status(400).json({ error: "INVALID_TRANSACTION_PAYLOAD" });
-        return;
-      }
-      await db.replaceTransactions(req.authToken, sanitized);
-      res.status(204).end();
-    }),
-  );
+    router.post(
+      "/transactions",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const entries = Array.isArray(req.body?.transactions) ? req.body.transactions : [];
+        const sanitized = entries.filter(isUnifiedTransaction);
+        if (sanitized.length !== entries.length) {
+          res.status(400).json({ error: "INVALID_TRANSACTION_PAYLOAD" });
+          return;
+        }
+        await db.replaceTransactions(req.authToken, sanitized);
+        res.status(204).end();
+      }),
+    );
 
-  app.get(
-    "/transactions/masked",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const transactions = await db.readMaskedTransactions(req.authToken);
-      res.json({ transactions });
-    }),
-  );
+    router.get(
+      "/transactions/masked",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const transactions = await db.readMaskedTransactions(req.authToken);
+        res.json({ transactions });
+      }),
+    );
 
-  app.post(
-    "/transactions/masked",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const entries = Array.isArray(req.body?.transactions) ? req.body.transactions : [];
-      const sanitized = entries.filter(isUnifiedTransaction);
-      if (sanitized.length !== entries.length) {
-        res.status(400).json({ error: "INVALID_TRANSACTION_PAYLOAD" });
-        return;
-      }
-      await db.replaceMaskedTransactions(req.authToken, sanitized);
-      res.status(204).end();
-    }),
-  );
+    router.post(
+      "/transactions/masked",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const entries = Array.isArray(req.body?.transactions) ? req.body.transactions : [];
+        const sanitized = entries.filter(isUnifiedTransaction);
+        if (sanitized.length !== entries.length) {
+          res.status(400).json({ error: "INVALID_TRANSACTION_PAYLOAD" });
+          return;
+        }
+        await db.replaceMaskedTransactions(req.authToken, sanitized);
+        res.status(204).end();
+      }),
+    );
 
-  app.get(
-    "/bank-mapping",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const mappings = await db.listBankMappings(req.authToken);
-      res.json({ mappings });
-    }),
-  );
+    router.get(
+      "/bank-mapping",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const mappings = await db.listBankMappings(req.authToken);
+        res.json({ mappings });
+      }),
+    );
 
-  app.post(
-    "/bank-mapping",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      if (!isBankMapping(req.body)) {
-        res.status(400).json({ error: "INVALID_MAPPING" });
-        return;
-      }
-      await db.upsertBankMapping(req.authToken, req.body);
-      res.status(204).end();
-    }),
-  );
+    router.post(
+      "/bank-mapping",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        if (!isBankMapping(req.body)) {
+          res.status(400).json({ error: "INVALID_MAPPING" });
+          return;
+        }
+        await db.upsertBankMapping(req.authToken, req.body);
+        res.status(204).end();
+      }),
+    );
 
-  app.delete(
-    "/storage",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      await Promise.all([
-        db.clearTransactions(req.authToken),
-        db.clearBankMappings(req.authToken),
-        db.updateSettings(req.authToken, {}),
-      ]);
-      res.status(204).end();
-    }),
-  );
+    router.delete(
+      "/storage",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        await Promise.all([
+          db.clearTransactions(req.authToken),
+          db.clearBankMappings(req.authToken),
+          db.updateSettings(req.authToken, {}),
+        ]);
+        res.status(204).end();
+      }),
+    );
+  }
+
+  const router = express.Router();
+  registerRoutes(router);
+  app.use(router);
+
+  if (configuredBasePath !== "/") {
+    const scopedRouter = express.Router();
+    registerRoutes(scopedRouter);
+    app.use(configuredBasePath, scopedRouter);
+  }
 
   app.use((err, req, res, _next) => {
     console.error("Unhandled error", err);
@@ -299,4 +359,6 @@ module.exports = {
   parseOrigins,
   isUnifiedTransaction,
   isBankMapping,
+  normalizeBasePath,
+  normalizeOrigin,
 };
