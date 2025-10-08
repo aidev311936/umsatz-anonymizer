@@ -14,6 +14,22 @@ const DEFAULT_SESSION_ENDPOINT = "/auth/session";
 let cachedTokenEndpoint: string | null = null;
 let cachedSessionEndpoint: string | null = null;
 
+function normalizeEndpointForComparison(endpoint: string): string {
+  if (!endpoint) {
+    return "";
+  }
+
+  try {
+    const base = typeof window !== "undefined" ? window.location.href : "http://localhost";
+    const url = new URL(endpoint, base);
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return endpoint.trim().replace(/\/$/, "");
+  }
+}
+
 function resolveTokenEndpoint(): string {
   if (cachedTokenEndpoint) {
     return cachedTokenEndpoint;
@@ -91,15 +107,22 @@ function resolveSessionEndpoint(): string {
     candidates.push(meta.getAttribute("content"));
   }
 
+  const tokenEndpoint = resolveTokenEndpoint();
+  const normalizedTokenEndpoint = normalizeEndpointForComparison(tokenEndpoint);
+
   for (const candidate of candidates) {
     const trimmed = candidate?.trim();
-    if (trimmed) {
+    if (!trimmed) {
+      continue;
+    }
+
+    const normalizedCandidate = normalizeEndpointForComparison(trimmed);
+    if (normalizedCandidate && normalizedCandidate !== normalizedTokenEndpoint) {
       cachedSessionEndpoint = trimmed;
-      return trimmed;
+      return cachedSessionEndpoint;
     }
   }
 
-  const tokenEndpoint = resolveTokenEndpoint();
   if (tokenEndpoint === DEFAULT_TOKEN_ENDPOINT) {
     cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
     return cachedSessionEndpoint;
