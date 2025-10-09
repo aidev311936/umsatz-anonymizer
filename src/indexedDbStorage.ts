@@ -71,7 +71,7 @@ function openDatabase(): Promise<IDBDatabase> {
               ensureHashIndex();
               for (const [hash, value] of uniqueByHash.entries()) {
                 const stored: StoredTransaction = { ...cloneUnifiedTx(value), hash };
-                await requestAsPromise(rawStore.add(stored));
+                await requestAsPromise(rawStore.add(stored, hash));
               }
             } catch (error) {
               console.error("Failed to migrate raw transactions for hash index", error);
@@ -242,7 +242,7 @@ export async function storeRawTransactions(entries: UnifiedTx[]): Promise<void> 
     clearRequest.onsuccess = () => {
       try {
         for (const entry of storedEntries) {
-          track(store.add(entry));
+          track(store.add(entry, entry.hash));
         }
       } catch (error) {
         fail(error instanceof Error ? error : new Error(String(error)));
@@ -269,7 +269,7 @@ export async function addRawTransactionIfMissing(
           return;
         }
         try {
-          const addRequest = track(store.add({ ...cloneUnifiedTx(entry), hash }));
+          const addRequest = track(store.add({ ...cloneUnifiedTx(entry), hash }, hash));
           if (addRequest) {
             addRequest.onsuccess = () => {
               added = true;
