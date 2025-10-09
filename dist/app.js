@@ -112,17 +112,23 @@ function createImportProgressModal(total) {
     progressLabel.className = "import-progress-label";
     progressLabel.textContent = `0 / ${total}`;
     modal.appendChild(progressLabel);
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = "Schließen";
+    closeButton.hidden = true;
+    closeButton.addEventListener("click", () => {
+        close();
+    });
+    modal.appendChild(closeButton);
     backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
     let closed = false;
-    const close = (delay = 0) => {
+    const close = () => {
         if (closed) {
             return;
         }
         closed = true;
-        window.setTimeout(() => {
-            backdrop.remove();
-        }, delay);
+        backdrop.remove();
     };
     return {
         update(imported, totalCount) {
@@ -136,12 +142,14 @@ function createImportProgressModal(total) {
             progressBar.max = Math.max(1, totalCount);
             progressBar.value = Math.min(imported, totalCount);
             progressLabel.textContent = `${imported} / ${totalCount}`;
-            close(600);
+            closeButton.hidden = false;
+            closeButton.focus();
         },
         fail(message) {
             title.textContent = "Import fehlgeschlagen";
             description.textContent = message ?? "Bitte prüfen Sie die Konsole für Details.";
-            close(1200);
+            closeButton.hidden = false;
+            closeButton.focus();
         },
     };
 }
