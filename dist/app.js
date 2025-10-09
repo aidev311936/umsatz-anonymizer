@@ -3,7 +3,7 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, initializeStorage, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, initializeStorage, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, persistMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
 import { formatBookingAmount, formatTransactionsForDisplay, sanitizeDisplaySettings, } from "./displaySettings.js";
@@ -600,13 +600,21 @@ function handleToggleAnonymization() {
         }
     }
 }
-function handleSaveMaskedCopy() {
+async function handleSaveMaskedCopy() {
     if (!anonymizedActive || anonymizedCache.length === 0) {
         setStatus("Keine anonymisierten Daten zum Speichern vorhanden.", "warning");
         return;
     }
-    saveMaskedTransactions(anonymizedCache);
-    setStatus("Anonymisierte Kopie gespeichert.", "info");
+    setStatus("Anonymisierte Kopie wird gespeichert ...", "info");
+    try {
+        await saveMaskedTransactions(anonymizedCache);
+        await persistMaskedTransactions();
+        setStatus("Anonymisierte Kopie an Postgres übertragen.", "info");
+    }
+    catch (error) {
+        console.error("persistMaskedTransactions failed", error);
+        setStatus("Fehler beim Speichern der anonymisierten Daten.", "error");
+    }
 }
 function handleDownloadMaskedCsv() {
     const masked = loadMaskedTransactions();
@@ -812,7 +820,7 @@ function init() {
     });
     ensuredSaveMaskedButton.addEventListener("click", (event) => {
         event.preventDefault();
-        handleSaveMaskedCopy();
+        void handleSaveMaskedCopy();
     });
     ensuredDownloadMaskedButton.addEventListener("click", (event) => {
         event.preventDefault();

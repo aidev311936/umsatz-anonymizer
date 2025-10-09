@@ -1,5 +1,13 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
 import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
+import {
+  appendRawTransactions as appendRawTransactionsInDb,
+  clearAllIndexedDbData,
+  initializeIndexedDbStorage,
+  loadMaskedTransactionsSnapshot,
+  storeMaskedTransactions as storeMaskedTransactionsInDb,
+  storeRawTransactions as storeRawTransactionsInDb,
+} from "./indexedDbStorage.js";
 
 declare global {
   interface Window {
@@ -82,10 +90,10 @@ export async function initializeStorage(): Promise<void> {
   }
   if (!initializationPromise) {
     initializationPromise = (async () => {
-      const [settings, mappings, transactions, masked] = await Promise.all([
+      const [settings, mappings, indexedDbSnapshot, masked] = await Promise.all([
         fetchSettingsFromBackend(),
         fetchBankMappingsFromBackend(),
-        fetchTransactionsFromBackend(),
+        initializeIndexedDbStorage(),
         fetchMaskedTransactionsFromBackend(),
       ]);
       settingsCache = settings;
@@ -97,8 +105,11 @@ export async function initializeStorage(): Promise<void> {
       }
       bankMappingsCache.length = 0;
       bankMappingsCache.push(...mappings);
-      transactionsCache = transactions;
-      maskedTransactionsCache = masked;
+      updateTransactionsCache(indexedDbSnapshot.rawTransactions);
+      const maskedSource =
+        masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
+      const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
+      await storeMaskedTransactionsInDb(sanitizedMasked);
       initialized = true;
     })().catch((error) => {
       initializationPromise = null;
@@ -338,17 +349,6 @@ function sortTransactions(entries: UnifiedTx[]): UnifiedTx[] {
   return [...entries].sort((a, b) => transactionTimestamp(b) - transactionTimestamp(a));
 }
 
-async function fetchTransactionsFromBackend(): Promise<UnifiedTx[]> {
-  const response = await apiRequest("/transactions");
-  const payload = await readJson<{ transactions?: unknown }>(response);
-  const parsed = Array.isArray(payload.transactions) ? payload.transactions : [];
-  const normalized = parsed
-    .map(toUnifiedTx)
-    .filter((entry): entry is UnifiedTx => entry !== null)
-    .map(sanitizeTransaction);
-  return sortTransactions(normalized);
-}
-
 async function fetchMaskedTransactionsFromBackend(): Promise<UnifiedTx[]> {
   const response = await apiRequest("/transactions/masked");
   const payload = await readJson<{ transactions?: unknown }>(response);
@@ -378,24 +378,16 @@ export function loadTransactions(): UnifiedTx[] {
 
 export function saveTransactions(entries: UnifiedTx[]): void {
   const updated = updateTransactionsCache(entries);
-  fireAndForget(
-    apiRequest("/transactions", {
-      method: "POST",
-      body: JSON.stringify({ transactions: updated }),
-    }),
-    "saveTransactions",
-  );
+  fireAndForget(storeRawTransactionsInDb(updated), "saveTransactions#indexedDb");
 }
 
 export function appendTransactions(entries: UnifiedTx[]): UnifiedTx[] {
-  const combined = transactionsCache.concat(entries.map(sanitizeTransaction));
+  const sanitizedNewEntries = entries.map(sanitizeTransaction);
+  const combined = transactionsCache.concat(sanitizedNewEntries);
   const updated = updateTransactionsCache(combined);
   fireAndForget(
-    apiRequest("/transactions", {
-      method: "POST",
-      body: JSON.stringify({ transactions: updated }),
-    }),
-    "appendTransactions",
+    appendRawTransactionsInDb(sanitizedNewEntries),
+    "appendTransactions#indexedDb",
   );
   return updated;
 }
@@ -404,15 +396,19 @@ export function loadMaskedTransactions(): UnifiedTx[] {
   return [...maskedTransactionsCache];
 }
 
-export function saveMaskedTransactions(entries: UnifiedTx[]): void {
+export async function saveMaskedTransactions(entries: UnifiedTx[]): Promise<void> {
   const updated = updateMaskedTransactionsCache(entries);
-  fireAndForget(
-    apiRequest("/transactions/masked", {
-      method: "POST",
-      body: JSON.stringify({ transactions: updated }),
-    }),
-    "saveMaskedTransactions",
-  );
+  await storeMaskedTransactionsInDb(updated);
+}
+
+export async function persistMaskedTransactions(): Promise<void> {
+  const stored = await loadMaskedTransactionsSnapshot();
+  const updated = updateMaskedTransactionsCache(stored);
+  await storeMaskedTransactionsInDb(updated);
+  await apiRequest("/transactions/masked", {
+    method: "POST",
+    body: JSON.stringify({ transactions: updated }),
+  });
 }
 
 function isAnonRule(value: unknown): value is AnonRule {
@@ -554,6 +550,7 @@ export function clearPersistentData(): void {
     }),
     "clearPersistentData",
   );
+  fireAndForget(clearAllIndexedDbData(), "clearIndexedDbStorage");
   const keys = [
     BANK_MAPPINGS_KEY,
     TRANSACTIONS_KEY,

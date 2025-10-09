@@ -1,4 +1,5 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
+import { appendRawTransactions as appendRawTransactionsInDb, clearAllIndexedDbData, initializeIndexedDbStorage, loadMaskedTransactionsSnapshot, storeMaskedTransactions as storeMaskedTransactionsInDb, storeRawTransactions as storeRawTransactionsInDb, } from "./indexedDbStorage.js";
 function resolveApiBase() {
     const meta = document.querySelector('meta[name="backend-base-url"]');
     const metaContent = meta?.getAttribute("content")?.trim();
@@ -65,10 +66,10 @@ export async function initializeStorage() {
     }
     if (!initializationPromise) {
         initializationPromise = (async () => {
-            const [settings, mappings, transactions, masked] = await Promise.all([
+            const [settings, mappings, indexedDbSnapshot, masked] = await Promise.all([
                 fetchSettingsFromBackend(),
                 fetchBankMappingsFromBackend(),
-                fetchTransactionsFromBackend(),
+                initializeIndexedDbStorage(),
                 fetchMaskedTransactionsFromBackend(),
             ]);
             settingsCache = settings;
@@ -81,8 +82,10 @@ export async function initializeStorage() {
             }
             bankMappingsCache.length = 0;
             bankMappingsCache.push(...mappings);
-            transactionsCache = transactions;
-            maskedTransactionsCache = masked;
+            updateTransactionsCache(indexedDbSnapshot.rawTransactions);
+            const maskedSource = masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
+            const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
+            await storeMaskedTransactionsInDb(sanitizedMasked);
             initialized = true;
         })().catch((error) => {
             initializationPromise = null;
@@ -271,16 +274,6 @@ function transactionTimestamp(tx) {
 function sortTransactions(entries) {
     return [...entries].sort((a, b) => transactionTimestamp(b) - transactionTimestamp(a));
 }
-async function fetchTransactionsFromBackend() {
-    const response = await apiRequest("/transactions");
-    const payload = await readJson(response);
-    const parsed = Array.isArray(payload.transactions) ? payload.transactions : [];
-    const normalized = parsed
-        .map(toUnifiedTx)
-        .filter((entry) => entry !== null)
-        .map(sanitizeTransaction);
-    return sortTransactions(normalized);
-}
 async function fetchMaskedTransactionsFromBackend() {
     const response = await apiRequest("/transactions/masked");
     const payload = await readJson(response);
@@ -306,29 +299,30 @@ export function loadTransactions() {
 }
 export function saveTransactions(entries) {
     const updated = updateTransactionsCache(entries);
-    fireAndForget(apiRequest("/transactions", {
-        method: "POST",
-        body: JSON.stringify({ transactions: updated }),
-    }), "saveTransactions");
+    fireAndForget(storeRawTransactionsInDb(updated), "saveTransactions#indexedDb");
 }
 export function appendTransactions(entries) {
-    const combined = transactionsCache.concat(entries.map(sanitizeTransaction));
+    const sanitizedNewEntries = entries.map(sanitizeTransaction);
+    const combined = transactionsCache.concat(sanitizedNewEntries);
     const updated = updateTransactionsCache(combined);
-    fireAndForget(apiRequest("/transactions", {
-        method: "POST",
-        body: JSON.stringify({ transactions: updated }),
-    }), "appendTransactions");
+    fireAndForget(appendRawTransactionsInDb(sanitizedNewEntries), "appendTransactions#indexedDb");
     return updated;
 }
 export function loadMaskedTransactions() {
     return [...maskedTransactionsCache];
 }
-export function saveMaskedTransactions(entries) {
+export async function saveMaskedTransactions(entries) {
     const updated = updateMaskedTransactionsCache(entries);
-    fireAndForget(apiRequest("/transactions/masked", {
+    await storeMaskedTransactionsInDb(updated);
+}
+export async function persistMaskedTransactions() {
+    const stored = await loadMaskedTransactionsSnapshot();
+    const updated = updateMaskedTransactionsCache(stored);
+    await storeMaskedTransactionsInDb(updated);
+    await apiRequest("/transactions/masked", {
         method: "POST",
         body: JSON.stringify({ transactions: updated }),
-    }), "saveMaskedTransactions");
+    });
 }
 function isAnonRule(value) {
     if (typeof value !== "object" || value === null) {
@@ -449,6 +443,7 @@ export function clearPersistentData() {
     fireAndForget(apiRequest("/storage", {
         method: "DELETE",
     }), "clearPersistentData");
+    fireAndForget(clearAllIndexedDbData(), "clearIndexedDbStorage");
     const keys = [
         BANK_MAPPINGS_KEY,
         TRANSACTIONS_KEY,

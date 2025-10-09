@@ -19,6 +19,7 @@ import {
   saveAnonymizationRules,
   saveTransactions,
   saveMaskedTransactions,
+  persistMaskedTransactions,
 } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI, RulesUIController } from "./rulesUI.js";
@@ -730,13 +731,20 @@ function handleToggleAnonymization(): void {
   }
 }
 
-function handleSaveMaskedCopy(): void {
+async function handleSaveMaskedCopy(): Promise<void> {
   if (!anonymizedActive || anonymizedCache.length === 0) {
     setStatus("Keine anonymisierten Daten zum Speichern vorhanden.", "warning");
     return;
   }
-  saveMaskedTransactions(anonymizedCache);
-  setStatus("Anonymisierte Kopie gespeichert.", "info");
+  setStatus("Anonymisierte Kopie wird gespeichert ...", "info");
+  try {
+    await saveMaskedTransactions(anonymizedCache);
+    await persistMaskedTransactions();
+    setStatus("Anonymisierte Kopie an Postgres übertragen.", "info");
+  } catch (error) {
+    console.error("persistMaskedTransactions failed", error);
+    setStatus("Fehler beim Speichern der anonymisierten Daten.", "error");
+  }
 }
 
 function handleDownloadMaskedCsv(): void {
@@ -962,7 +970,7 @@ function init(): void {
   });
   ensuredSaveMaskedButton.addEventListener("click", (event) => {
     event.preventDefault();
-    handleSaveMaskedCopy();
+    void handleSaveMaskedCopy();
   });
   ensuredDownloadMaskedButton.addEventListener("click", (event) => {
     event.preventDefault();
