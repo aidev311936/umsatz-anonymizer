@@ -86,7 +86,7 @@ export async function initializeStorage() {
             updateTransactionsCache(indexedDbSnapshot.rawTransactions);
             const maskedSource = masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
             const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
-            await storeMaskedTransactionsInDb(sanitizedMasked);
+            await storeMaskedTransactionsInDb(sanitizedMasked, transactionsCache);
             initialized = true;
         })().catch((error) => {
             initializationPromise = null;
@@ -348,12 +348,12 @@ export function loadMaskedTransactions() {
 }
 export async function saveMaskedTransactions(entries) {
     const updated = updateMaskedTransactionsCache(entries);
-    await storeMaskedTransactionsInDb(updated);
+    await storeMaskedTransactionsInDb(updated, transactionsCache);
 }
 export async function persistMaskedTransactions() {
     const stored = await loadMaskedTransactionsSnapshot();
     const updated = updateMaskedTransactionsCache(stored);
-    await storeMaskedTransactionsInDb(updated);
+    await storeMaskedTransactionsInDb(updated, transactionsCache);
     await apiRequest("/transactions/masked", {
         method: "POST",
         body: JSON.stringify({ transactions: updated }),

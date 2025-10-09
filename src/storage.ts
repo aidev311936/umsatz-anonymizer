@@ -111,7 +111,7 @@ export async function initializeStorage(): Promise<void> {
       const maskedSource =
         masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
       const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
-      await storeMaskedTransactionsInDb(sanitizedMasked);
+      await storeMaskedTransactionsInDb(sanitizedMasked, transactionsCache);
       initialized = true;
     })().catch((error) => {
       initializationPromise = null;
@@ -449,13 +449,13 @@ export function loadMaskedTransactions(): UnifiedTx[] {
 
 export async function saveMaskedTransactions(entries: UnifiedTx[]): Promise<void> {
   const updated = updateMaskedTransactionsCache(entries);
-  await storeMaskedTransactionsInDb(updated);
+  await storeMaskedTransactionsInDb(updated, transactionsCache);
 }
 
 export async function persistMaskedTransactions(): Promise<void> {
   const stored = await loadMaskedTransactionsSnapshot();
   const updated = updateMaskedTransactionsCache(stored);
-  await storeMaskedTransactionsInDb(updated);
+  await storeMaskedTransactionsInDb(updated, transactionsCache);
   await apiRequest("/transactions/masked", {
     method: "POST",
     body: JSON.stringify({ transactions: updated }),

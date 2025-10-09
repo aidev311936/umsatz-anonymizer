@@ -221,6 +221,58 @@ async function prepareStoredTransactions(entries: UnifiedTx[]): Promise<StoredTr
   return prepared;
 }
 
+function transactionLinkKey(entry: UnifiedTx): string {
+  return [entry.bank_name, entry.booking_date_raw, entry.booking_type, entry.booking_amount].join("|");
+}
+
+async function buildHashQueues(source: UnifiedTx[]): Promise<Map<string, string[]>> {
+  const hashes = await Promise.all(source.map((entry) => computeUnifiedTxHash(entry)));
+  const queues = new Map<string, string[]>();
+  hashes.forEach((hash, index) => {
+    const key = transactionLinkKey(source[index]);
+    const queue = queues.get(key);
+    if (queue) {
+      queue.push(hash);
+    } else {
+      queues.set(key, [hash]);
+    }
+  });
+  return queues;
+}
+
+function takeHashForEntry(queues: Map<string, string[]>, entry: UnifiedTx): string | null {
+  const key = transactionLinkKey(entry);
+  const queue = queues.get(key);
+  if (!queue || queue.length === 0) {
+    return null;
+  }
+  const [hash] = queue.splice(0, 1);
+  if (queue.length === 0) {
+    queues.delete(key);
+  }
+  return hash;
+}
+
+async function prepareMaskedStoredTransactions(
+  entries: UnifiedTx[],
+  source?: UnifiedTx[],
+): Promise<StoredTransaction[]> {
+  const sourceQueues = source ? await buildHashQueues(source.map(cloneUnifiedTx)) : null;
+  const prepared: StoredTransaction[] = [];
+  for (const entry of entries) {
+    const unified = cloneUnifiedTx(entry);
+    let hash: string | null = null;
+    if (sourceQueues) {
+      hash = takeHashForEntry(sourceQueues, unified);
+    }
+    if (!hash) {
+      hash = await computeUnifiedTxHash(unified);
+    }
+    prepared.push({ ...unified, hash });
+  }
+  return prepared;
+}
+
 export async function initializeIndexedDbStorage(): Promise<IndexedDbSnapshot> {
   const [rawTransactions, maskedTransactions] = await Promise.all([
     getAllFromStore(RAW_STORE),
@@ -292,7 +344,11 @@ export async function clearRawTransactions(): Promise<void> {
   });
 }
 
-export async function storeMaskedTransactions(entries: UnifiedTx[]): Promise<void> {
+export async function storeMaskedTransactions(
+  entries: UnifiedTx[],
+  source?: UnifiedTx[],
+): Promise<void> {
+  const storedEntries = await prepareMaskedStoredTransactions(entries, source);
   await runTransaction(MASKED_STORE, "readwrite", (store, track, fail) => {
     const clearRequest = track(store.clear());
     if (!clearRequest) {
@@ -300,8 +356,8 @@ export async function storeMaskedTransactions(entries: UnifiedTx[]): Promise<voi
     }
     clearRequest.onsuccess = () => {
       try {
-        for (const entry of entries) {
-          track(store.add(cloneUnifiedTx(entry)));
+        for (const entry of storedEntries) {
+          track(store.add(entry, entry.hash));
         }
       } catch (error) {
         fail(error instanceof Error ? error : new Error(String(error)));

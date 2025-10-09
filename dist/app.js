@@ -661,6 +661,7 @@ function handleToggleAnonymization() {
         const rules = getConfiguredRules();
         const result = applyAnonymization(transactions, rules);
         anonymizedCache = result.data;
+        void saveMaskedTransactions(anonymizedCache);
         lastAnonymizationWarnings = result.warnings;
         anonymizedActive = true;
         ensuredAnonymizeButton.textContent = "Original anzeigen";
