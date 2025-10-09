@@ -2,23 +2,19 @@ import { UnifiedTx } from "./types.js";
 
 const encoder = new TextEncoder();
 
-function normalizeTransaction(tx: UnifiedTx): Required<Pick<UnifiedTx,
-  | "bank_name"
-  | "booking_date"
+type HashRelevantFields = Pick<UnifiedTx,
   | "booking_date_raw"
-  | "booking_date_iso"
   | "booking_text"
   | "booking_type"
   | "booking_amount"
->> {
+>;
+
+function normalizeTransaction(tx: UnifiedTx): Required<HashRelevantFields> {
   return {
-    bank_name: tx.bank_name,
-    booking_date: tx.booking_date,
     booking_date_raw: tx.booking_date_raw ?? tx.booking_date,
-    booking_date_iso: tx.booking_date_iso ?? null,
-    booking_text: tx.booking_text,
-    booking_type: tx.booking_type,
-    booking_amount: tx.booking_amount,
+    booking_text: tx.booking_text ?? "",
+    booking_type: tx.booking_type ?? "",
+    booking_amount: tx.booking_amount ?? "",
   };
 }
 

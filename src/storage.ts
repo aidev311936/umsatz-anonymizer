@@ -2,8 +2,9 @@ import { sanitizeDisplaySettings } from "./displaySettings.js";
 import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
 import { computeUnifiedTxHash } from "./transactionHash.js";
 import {
-  appendRawTransactions as appendRawTransactionsInDb,
+  addRawTransactionIfMissing,
   clearAllIndexedDbData,
+  ensureIndexedDbReady,
   initializeIndexedDbStorage,
   loadMaskedTransactionsSnapshot,
   storeMaskedTransactions as storeMaskedTransactionsInDb,
@@ -388,43 +389,52 @@ export interface AppendTransactionsResult {
   skippedDuplicates: number;
 }
 
-async function computeHashes(entries: UnifiedTx[]): Promise<string[]> {
-  if (entries.length === 0) {
-    return [];
-  }
-  return Promise.all(entries.map((entry) => computeUnifiedTxHash(entry)));
+export interface AppendTransactionsOptions {
+  onProgress?: (processed: number, total: number, imported: number) => void;
 }
 
-export async function appendTransactions(entries: UnifiedTx[]): Promise<AppendTransactionsResult> {
+export async function appendTransactions(
+  entries: UnifiedTx[],
+  options?: AppendTransactionsOptions,
+): Promise<AppendTransactionsResult> {
   const sanitizedNewEntries = entries.map(sanitizeTransaction);
-  const [existingHashesList, newHashesList] = await Promise.all([
-    computeHashes(transactionsCache),
-    computeHashes(sanitizedNewEntries),
-  ]);
+  const total = sanitizedNewEntries.length;
+  if (total === 0) {
+    return {
+      transactions: [...transactionsCache],
+      addedCount: 0,
+      skippedDuplicates: 0,
+    };
+  }
 
-  const seenHashes = new Set(existingHashesList);
+  await ensureIndexedDbReady();
+
   const uniqueEntries: UnifiedTx[] = [];
   let skippedDuplicates = 0;
+  let processed = 0;
 
-  sanitizedNewEntries.forEach((entry, index) => {
-    const hash = newHashesList[index];
-    if (!hash) {
-      throw new Error("Failed to compute transaction hash.");
-    }
-    if (seenHashes.has(hash)) {
+  for (const entry of sanitizedNewEntries) {
+    const hash = await computeUnifiedTxHash(entry);
+    const added = await addRawTransactionIfMissing(entry, hash);
+    if (added) {
+      uniqueEntries.push(entry);
+    } else {
       skippedDuplicates += 1;
-      return;
     }
-    seenHashes.add(hash);
-    uniqueEntries.push(entry);
-  });
+    processed += 1;
+    options?.onProgress?.(processed, total, uniqueEntries.length);
+  }
+
+  if (uniqueEntries.length === 0) {
+    return {
+      transactions: [...transactionsCache],
+      addedCount: 0,
+      skippedDuplicates,
+    };
+  }
 
   const combined = transactionsCache.concat(uniqueEntries);
   const updated = updateTransactionsCache(combined);
-  fireAndForget(
-    appendRawTransactionsInDb(uniqueEntries),
-    "appendTransactions#indexedDb",
-  );
 
   return {
     transactions: updated,

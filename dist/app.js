@@ -92,6 +92,59 @@ function setStatus(message, type = "info") {
     ensuredStatusArea.textContent = message;
     ensuredStatusArea.setAttribute("data-status", type);
 }
+function createImportProgressModal(total) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "import-progress-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "import-progress-modal";
+    const title = document.createElement("h2");
+    title.textContent = "Import läuft …";
+    modal.appendChild(title);
+    const description = document.createElement("p");
+    description.className = "import-progress-description";
+    description.textContent = `Importiere ${total} Umsätze …`;
+    modal.appendChild(description);
+    const progressBar = document.createElement("progress");
+    progressBar.max = Math.max(1, total);
+    progressBar.value = 0;
+    modal.appendChild(progressBar);
+    const progressLabel = document.createElement("div");
+    progressLabel.className = "import-progress-label";
+    progressLabel.textContent = `0 / ${total}`;
+    modal.appendChild(progressLabel);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    let closed = false;
+    const close = (delay = 0) => {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        window.setTimeout(() => {
+            backdrop.remove();
+        }, delay);
+    };
+    return {
+        update(imported, totalCount) {
+            progressBar.max = Math.max(1, totalCount);
+            progressBar.value = Math.min(imported, totalCount);
+            progressLabel.textContent = `${imported} / ${totalCount}`;
+        },
+        complete(imported, totalCount) {
+            title.textContent = "Import abgeschlossen";
+            description.textContent = `${imported} von ${totalCount} Umsätzen gespeichert.`;
+            progressBar.max = Math.max(1, totalCount);
+            progressBar.value = Math.min(imported, totalCount);
+            progressLabel.textContent = `${imported} / ${totalCount}`;
+            close(600);
+        },
+        fail(message) {
+            title.textContent = "Import fehlgeschlagen";
+            description.textContent = message ?? "Bitte prüfen Sie die Konsole für Details.";
+            close(1200);
+        },
+    };
+}
 function clearTokenError() {
     ensuredTokenError.textContent = "";
     ensuredTokenError.hidden = true;
@@ -543,8 +596,14 @@ async function handleImport() {
         setStatus("Keine Datenzeilen gefunden.", "warning");
         return;
     }
+    const progressModal = createImportProgressModal(transformed.length);
     try {
-        const result = await appendTransactions(transformed);
+        const result = await appendTransactions(transformed, {
+            onProgress: (_processed, totalCount, importedCount) => {
+                progressModal.update(importedCount, totalCount);
+            },
+        });
+        progressModal.complete(result.addedCount, transformed.length);
         transactions = result.transactions;
         resetAnonymizationState();
         renderTransactions(transactions);
@@ -563,6 +622,7 @@ async function handleImport() {
     }
     catch (error) {
         console.error("appendTransactions failed", error);
+        progressModal.fail("Umsätze konnten nicht gespeichert werden.");
         setStatus("Fehler beim Speichern der Umsätze.", "error");
     }
 }

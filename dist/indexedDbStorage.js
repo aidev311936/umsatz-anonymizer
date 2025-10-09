@@ -1,6 +1,6 @@
 import { computeUnifiedTxHash } from "./transactionHash.js";
 const DB_NAME = "umsatz_anonymizer";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const RAW_STORE = "raw_transactions";
 const MASKED_STORE = "masked_transactions";
 const RAW_HASH_INDEX = "hash";
@@ -30,8 +30,13 @@ function openDatabase() {
                         rawStore.createIndex(RAW_HASH_INDEX, RAW_HASH_INDEX, { unique: true });
                     }
                 };
-                if ((event.oldVersion ?? 0) < 2) {
+                const oldVersion = event.oldVersion ?? 0;
+                if (oldVersion < 3) {
                     const getAllRequest = rawStore.getAll();
+                    getAllRequest.onerror = () => {
+                        console.error("Failed to read existing raw transactions during migration.", getAllRequest.error);
+                        transaction.abort();
+                    };
                     getAllRequest.onsuccess = async () => {
                         const records = Array.isArray(getAllRequest.result)
                             ? getAllRequest.result
@@ -39,11 +44,9 @@ function openDatabase() {
                         const uniqueByHash = new Map();
                         for (const record of records) {
                             const unified = cloneUnifiedTx(record);
-                            const existingHash = typeof record.hash === "string"
-                                ? record.hash
-                                : await computeUnifiedTxHash(unified);
-                            if (!uniqueByHash.has(existingHash)) {
-                                uniqueByHash.set(existingHash, unified);
+                            const hash = await computeUnifiedTxHash(unified);
+                            if (!uniqueByHash.has(hash)) {
+                                uniqueByHash.set(hash, unified);
                             }
                         }
                         try {
@@ -166,6 +169,9 @@ function cloneUnifiedTx(tx) {
         booking_type: tx.booking_type,
     };
 }
+export async function ensureIndexedDbReady() {
+    await openDatabase();
+}
 async function prepareStoredTransactions(entries) {
     const prepared = await Promise.all(entries.map(async (entry) => {
         const unified = cloneUnifiedTx(entry);
@@ -203,21 +209,38 @@ export async function storeRawTransactions(entries) {
         };
     });
 }
-export async function appendRawTransactions(entries) {
-    if (entries.length === 0) {
-        return;
-    }
-    const storedEntries = await prepareStoredTransactions(entries);
+export async function addRawTransactionIfMissing(entry, hash) {
+    let added = false;
     await runTransaction(RAW_STORE, "readwrite", (store, track, fail) => {
         try {
-            for (const entry of storedEntries) {
-                track(store.add(entry));
+            const index = store.index(RAW_HASH_INDEX);
+            const checkRequest = track(index.get(hash));
+            if (!checkRequest) {
+                return;
             }
+            checkRequest.onsuccess = () => {
+                const existing = checkRequest.result;
+                if (existing) {
+                    return;
+                }
+                try {
+                    const addRequest = track(store.add({ ...cloneUnifiedTx(entry), hash }));
+                    if (addRequest) {
+                        addRequest.onsuccess = () => {
+                            added = true;
+                        };
+                    }
+                }
+                catch (error) {
+                    fail(error instanceof Error ? error : new Error(String(error)));
+                }
+            };
         }
         catch (error) {
             fail(error instanceof Error ? error : new Error(String(error)));
         }
     });
+    return added;
 }
 export async function clearRawTransactions() {
     await runTransaction(RAW_STORE, "readwrite", (store, track) => {

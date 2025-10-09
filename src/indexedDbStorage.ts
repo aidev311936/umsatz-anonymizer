@@ -2,7 +2,7 @@ import { computeUnifiedTxHash } from "./transactionHash.js";
 import { UnifiedTx } from "./types.js";
 
 const DB_NAME = "umsatz_anonymizer";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const RAW_STORE = "raw_transactions";
 const MASKED_STORE = "masked_transactions";
 const RAW_HASH_INDEX = "hash";
@@ -45,8 +45,13 @@ function openDatabase(): Promise<IDBDatabase> {
           }
         };
 
-        if ((event.oldVersion ?? 0) < 2) {
+        const oldVersion = event.oldVersion ?? 0;
+        if (oldVersion < 3) {
           const getAllRequest = rawStore.getAll();
+          getAllRequest.onerror = () => {
+            console.error("Failed to read existing raw transactions during migration.", getAllRequest.error);
+            transaction.abort();
+          };
           getAllRequest.onsuccess = async () => {
             const records = Array.isArray(getAllRequest.result)
               ? (getAllRequest.result as (StoredTransaction | UnifiedTx)[])
@@ -55,13 +60,9 @@ function openDatabase(): Promise<IDBDatabase> {
 
             for (const record of records) {
               const unified = cloneUnifiedTx(record);
-              const existingHash =
-                typeof (record as { hash?: unknown }).hash === "string"
-                  ? (record as { hash: string }).hash
-                  : await computeUnifiedTxHash(unified);
-
-              if (!uniqueByHash.has(existingHash)) {
-                uniqueByHash.set(existingHash, unified);
+              const hash = await computeUnifiedTxHash(unified);
+              if (!uniqueByHash.has(hash)) {
+                uniqueByHash.set(hash, unified);
               }
             }
 
@@ -205,6 +206,10 @@ function cloneUnifiedTx(tx: UnifiedTx): UnifiedTx {
   };
 }
 
+export async function ensureIndexedDbReady(): Promise<void> {
+  await openDatabase();
+}
+
 async function prepareStoredTransactions(entries: UnifiedTx[]): Promise<StoredTransaction[]> {
   const prepared = await Promise.all(
     entries.map(async (entry) => {
@@ -246,20 +251,39 @@ export async function storeRawTransactions(entries: UnifiedTx[]): Promise<void> 
   });
 }
 
-export async function appendRawTransactions(entries: UnifiedTx[]): Promise<void> {
-  if (entries.length === 0) {
-    return;
-  }
-  const storedEntries = await prepareStoredTransactions(entries);
+export async function addRawTransactionIfMissing(
+  entry: UnifiedTx,
+  hash: string,
+): Promise<boolean> {
+  let added = false;
   await runTransaction(RAW_STORE, "readwrite", (store, track, fail) => {
     try {
-      for (const entry of storedEntries) {
-        track(store.add(entry));
+      const index = store.index(RAW_HASH_INDEX);
+      const checkRequest = track(index.get(hash));
+      if (!checkRequest) {
+        return;
       }
+      checkRequest.onsuccess = () => {
+        const existing = checkRequest.result;
+        if (existing) {
+          return;
+        }
+        try {
+          const addRequest = track(store.add({ ...cloneUnifiedTx(entry), hash }));
+          if (addRequest) {
+            addRequest.onsuccess = () => {
+              added = true;
+            };
+          }
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
     } catch (error) {
       fail(error instanceof Error ? error : new Error(String(error)));
     }
   });
+  return added;
 }
 
 export async function clearRawTransactions(): Promise<void> {
