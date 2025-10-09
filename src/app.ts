@@ -642,7 +642,7 @@ function handleSaveMapping(): void {
   }
 }
 
-function handleImport(): void {
+async function handleImport(): Promise<void> {
   if (!detectedHeader || detectedHeader.header.length === 0) {
     setStatus("Bitte zuerst eine CSV-Datei laden.", "warning");
     return;
@@ -675,10 +675,28 @@ function handleImport(): void {
     setStatus("Keine Datenzeilen gefunden.", "warning");
     return;
   }
-  transactions = appendTransactions(transformed);
-  resetAnonymizationState();
-  renderTransactions(transactions);
-  setStatus(`${transformed.length} Umsätze importiert und gespeichert.`, "info");
+  try {
+    const result = await appendTransactions(transformed);
+    transactions = result.transactions;
+    resetAnonymizationState();
+    renderTransactions(transactions);
+
+    const messages: string[] = [];
+    if (result.addedCount > 0) {
+      messages.push(`${result.addedCount} Umsätze importiert und gespeichert.`);
+    } else {
+      messages.push("Keine neuen Umsätze importiert.");
+    }
+    if (result.skippedDuplicates > 0) {
+      messages.push(`${result.skippedDuplicates} Duplikate übersprungen.`);
+    }
+
+    const statusType = result.addedCount > 0 ? "info" : "warning";
+    setStatus(messages.join(" "), statusType);
+  } catch (error) {
+    console.error("appendTransactions failed", error);
+    setStatus("Fehler beim Speichern der Umsätze.", "error");
+  }
 }
 
 function handleBankNameChange(): void {
@@ -958,7 +976,7 @@ function init(): void {
   });
   ensuredImportButton.addEventListener("click", (event) => {
     event.preventDefault();
-    handleImport();
+    void handleImport();
   });
   ensuredApplyDisplaySettingsButton.addEventListener("click", (event) => {
     event.preventDefault();

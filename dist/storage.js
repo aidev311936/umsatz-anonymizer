@@ -1,4 +1,5 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
+import { computeUnifiedTxHash } from "./transactionHash.js";
 import { appendRawTransactions as appendRawTransactionsInDb, clearAllIndexedDbData, initializeIndexedDbStorage, loadMaskedTransactionsSnapshot, storeMaskedTransactions as storeMaskedTransactionsInDb, storeRawTransactions as storeRawTransactionsInDb, } from "./indexedDbStorage.js";
 function resolveApiBase() {
     const meta = document.querySelector('meta[name="backend-base-url"]');
@@ -301,12 +302,41 @@ export function saveTransactions(entries) {
     const updated = updateTransactionsCache(entries);
     fireAndForget(storeRawTransactionsInDb(updated), "saveTransactions#indexedDb");
 }
-export function appendTransactions(entries) {
+async function computeHashes(entries) {
+    if (entries.length === 0) {
+        return [];
+    }
+    return Promise.all(entries.map((entry) => computeUnifiedTxHash(entry)));
+}
+export async function appendTransactions(entries) {
     const sanitizedNewEntries = entries.map(sanitizeTransaction);
-    const combined = transactionsCache.concat(sanitizedNewEntries);
+    const [existingHashesList, newHashesList] = await Promise.all([
+        computeHashes(transactionsCache),
+        computeHashes(sanitizedNewEntries),
+    ]);
+    const seenHashes = new Set(existingHashesList);
+    const uniqueEntries = [];
+    let skippedDuplicates = 0;
+    sanitizedNewEntries.forEach((entry, index) => {
+        const hash = newHashesList[index];
+        if (!hash) {
+            throw new Error("Failed to compute transaction hash.");
+        }
+        if (seenHashes.has(hash)) {
+            skippedDuplicates += 1;
+            return;
+        }
+        seenHashes.add(hash);
+        uniqueEntries.push(entry);
+    });
+    const combined = transactionsCache.concat(uniqueEntries);
     const updated = updateTransactionsCache(combined);
-    fireAndForget(appendRawTransactionsInDb(sanitizedNewEntries), "appendTransactions#indexedDb");
-    return updated;
+    fireAndForget(appendRawTransactionsInDb(uniqueEntries), "appendTransactions#indexedDb");
+    return {
+        transactions: updated,
+        addedCount: uniqueEntries.length,
+        skippedDuplicates,
+    };
 }
 export function loadMaskedTransactions() {
     return [...maskedTransactionsCache];
