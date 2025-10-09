@@ -63,25 +63,67 @@ function getAllFromStore(storeName: StoreName): Promise<UnifiedTx[]> {
   );
 }
 
-function runTransaction(storeName: StoreName, mode: IDBTransactionMode, work: (store: IDBObjectStore) => void): Promise<void> {
+function runTransaction(
+  storeName: StoreName,
+  mode: IDBTransactionMode,
+  work: (
+    store: IDBObjectStore,
+    track: <T>(request: IDBRequest<T> | undefined) => IDBRequest<T> | undefined,
+    fail: (error: Error) => void,
+  ) => void,
+): Promise<void> {
   return openDatabase().then(
     (database) =>
       new Promise((resolve, reject) => {
         const transaction = database.transaction(storeName, mode);
         const store = transaction.objectStore(storeName);
+
+        let settled = false;
+        const resolveOnce = () => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        };
+        const rejectOnce = (error: Error) => {
+          if (!settled) {
+            settled = true;
+            reject(error);
+          }
+        };
+        const fail = (error: Error) => {
+          rejectOnce(error);
+          try {
+            transaction.abort();
+          } catch {
+            // ignore abort errors – transaction is already closing
+          }
+        };
+
         transaction.oncomplete = () => {
-          resolve();
+          resolveOnce();
         };
         transaction.onerror = () => {
-          reject(transaction.error ?? new Error("IndexedDB transaction failed."));
+          rejectOnce(transaction.error ?? new Error("IndexedDB transaction failed."));
         };
         transaction.onabort = () => {
-          reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
+          rejectOnce(transaction.error ?? new Error("IndexedDB transaction aborted."));
         };
+
+        const track = <T,>(request: IDBRequest<T> | undefined) => {
+          if (!request) {
+            return request;
+          }
+          request.onerror = () => {
+            fail(request.error ?? new Error("IndexedDB request failed."));
+          };
+          return request;
+        };
+
         try {
-          work(store);
+          work(store, track, fail);
         } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
+          fail(error instanceof Error ? error : new Error(String(error)));
         }
       }),
   );
@@ -111,11 +153,20 @@ export async function initializeIndexedDbStorage(): Promise<IndexedDbSnapshot> {
 }
 
 export async function storeRawTransactions(entries: UnifiedTx[]): Promise<void> {
-  await runTransaction(RAW_STORE, "readwrite", (store) => {
-    store.clear();
-    for (const entry of entries) {
-      store.add(cloneTransaction(entry));
+  await runTransaction(RAW_STORE, "readwrite", (store, track, fail) => {
+    const clearRequest = track(store.clear());
+    if (!clearRequest) {
+      return;
     }
+    clearRequest.onsuccess = () => {
+      try {
+        for (const entry of entries) {
+          track(store.add(cloneTransaction(entry)));
+        }
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
   });
 }
 
@@ -123,25 +174,38 @@ export async function appendRawTransactions(entries: UnifiedTx[]): Promise<void>
   if (entries.length === 0) {
     return;
   }
-  await runTransaction(RAW_STORE, "readwrite", (store) => {
-    for (const entry of entries) {
-      store.add(cloneTransaction(entry));
+  await runTransaction(RAW_STORE, "readwrite", (store, track, fail) => {
+    try {
+      for (const entry of entries) {
+        track(store.add(cloneTransaction(entry)));
+      }
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
     }
   });
 }
 
 export async function clearRawTransactions(): Promise<void> {
-  await runTransaction(RAW_STORE, "readwrite", (store) => {
-    store.clear();
+  await runTransaction(RAW_STORE, "readwrite", (store, track) => {
+    track(store.clear());
   });
 }
 
 export async function storeMaskedTransactions(entries: UnifiedTx[]): Promise<void> {
-  await runTransaction(MASKED_STORE, "readwrite", (store) => {
-    store.clear();
-    for (const entry of entries) {
-      store.add(cloneTransaction(entry));
+  await runTransaction(MASKED_STORE, "readwrite", (store, track, fail) => {
+    const clearRequest = track(store.clear());
+    if (!clearRequest) {
+      return;
     }
+    clearRequest.onsuccess = () => {
+      try {
+        for (const entry of entries) {
+          track(store.add(cloneTransaction(entry)));
+        }
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
   });
 }
 
@@ -150,8 +214,8 @@ export function loadMaskedTransactionsSnapshot(): Promise<UnifiedTx[]> {
 }
 
 export async function clearMaskedTransactions(): Promise<void> {
-  await runTransaction(MASKED_STORE, "readwrite", (store) => {
-    store.clear();
+  await runTransaction(MASKED_STORE, "readwrite", (store, track) => {
+    track(store.clear());
   });
 }
 
