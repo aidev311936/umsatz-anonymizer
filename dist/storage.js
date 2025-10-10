@@ -13,6 +13,17 @@ function resolveApiBase() {
     return "";
 }
 const API_BASE_URL = resolveApiBase();
+const maskedTransactionsStorage = {
+    loadSnapshot: loadMaskedTransactionsSnapshot,
+    store: storeMaskedTransactionsInDb,
+};
+export function __setMaskedTransactionsStorageForTests(overrides) {
+    const previous = { ...maskedTransactionsStorage };
+    Object.assign(maskedTransactionsStorage, overrides);
+    return () => {
+        Object.assign(maskedTransactionsStorage, previous);
+    };
+}
 function fireAndForget(promise, context) {
     void promise.catch((error) => {
         console.error(`${context} failed`, error);
@@ -86,7 +97,7 @@ export async function initializeStorage() {
             updateTransactionsCache(indexedDbSnapshot.rawTransactions);
             const maskedSource = masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
             const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
-            await storeMaskedTransactionsInDb(sanitizedMasked, transactionsCache);
+            await maskedTransactionsStorage.store(sanitizedMasked, transactionsCache);
             initialized = true;
         })().catch((error) => {
             initializationPromise = null;
@@ -348,15 +359,17 @@ export function loadMaskedTransactions() {
 }
 export async function saveMaskedTransactions(entries) {
     const updated = updateMaskedTransactionsCache(entries);
-    await storeMaskedTransactionsInDb(updated, transactionsCache);
+    await maskedTransactionsStorage.store(updated, transactionsCache);
 }
 export async function persistMaskedTransactions() {
-    const stored = await loadMaskedTransactionsSnapshot();
-    const updated = updateMaskedTransactionsCache(stored);
-    await storeMaskedTransactionsInDb(updated, transactionsCache);
+    const stored = await maskedTransactionsStorage.loadSnapshot();
+    const snapshotTransactions = stored.map(({ hash: _hash, ...entry }) => entry);
+    const updated = updateMaskedTransactionsCache(snapshotTransactions);
+    const persisted = await maskedTransactionsStorage.store(updated, transactionsCache);
+    const payload = persisted.map(({ hash, ...entry }) => ({ ...entry, booking_hash: hash }));
     await apiRequest("/transactions/masked", {
         method: "POST",
-        body: JSON.stringify({ transactions: updated }),
+        body: JSON.stringify({ transactions: payload }),
     });
 }
 function isAnonRule(value) {

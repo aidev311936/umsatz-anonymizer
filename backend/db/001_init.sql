@@ -15,10 +15,14 @@ CREATE TABLE IF NOT EXISTS masked_transactions (
   booking_text TEXT,
   booking_type TEXT,
   booking_amount TEXT,
+  booking_hash TEXT,
   booking_category TEXT,
   created_on TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_on TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_masked_transactions_booking_hash
+  ON masked_transactions(booking_hash);
 
 CREATE TABLE IF NOT EXISTS bank_mapping (
   id BIGSERIAL PRIMARY KEY,

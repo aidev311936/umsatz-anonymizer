@@ -311,9 +311,35 @@ export async function storeMaskedTransactions(entries, source) {
             }
         };
     });
+    return storedEntries;
 }
 export function loadMaskedTransactionsSnapshot() {
-    return getAllFromStore(MASKED_STORE);
+    return openDatabase().then((database) => new Promise((resolve, reject) => {
+        const transaction = database.transaction(MASKED_STORE, "readonly");
+        const store = transaction.objectStore(MASKED_STORE);
+        const request = store.getAll();
+        request.onsuccess = async () => {
+            const result = Array.isArray(request.result)
+                ? request.result
+                : [];
+            try {
+                const prepared = await Promise.all(result.map(async (entry) => {
+                    const unified = cloneUnifiedTx(entry);
+                    const hash = typeof entry.hash === "string"
+                        ? entry.hash
+                        : await computeUnifiedTxHash(unified);
+                    return { ...unified, hash };
+                }));
+                resolve(prepared);
+            }
+            catch (error) {
+                reject(error instanceof Error ? error : new Error(String(error)));
+            }
+        };
+        request.onerror = () => {
+            reject(request.error ?? new Error("Failed to read from IndexedDB."));
+        };
+    }));
 }
 export async function clearMaskedTransactions() {
     await runTransaction(MASKED_STORE, "readwrite", (store, track) => {

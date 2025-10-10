@@ -16,7 +16,7 @@ interface IndexedDbSnapshot {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-type StoredTransaction = UnifiedTx & { hash: string };
+export type StoredTransaction = UnifiedTx & { hash: string };
 
 function openDatabase(): Promise<IDBDatabase> {
   if (!dbPromise) {
@@ -347,7 +347,7 @@ export async function clearRawTransactions(): Promise<void> {
 export async function storeMaskedTransactions(
   entries: UnifiedTx[],
   source?: UnifiedTx[],
-): Promise<void> {
+): Promise<StoredTransaction[]> {
   const storedEntries = await prepareMaskedStoredTransactions(entries, source);
   await runTransaction(MASKED_STORE, "readwrite", (store, track, fail) => {
     const clearRequest = track(store.clear());
@@ -364,10 +364,41 @@ export async function storeMaskedTransactions(
       }
     };
   });
+  return storedEntries;
 }
 
-export function loadMaskedTransactionsSnapshot(): Promise<UnifiedTx[]> {
-  return getAllFromStore(MASKED_STORE);
+export function loadMaskedTransactionsSnapshot(): Promise<StoredTransaction[]> {
+  return openDatabase().then(
+    (database) =>
+      new Promise((resolve, reject) => {
+        const transaction = database.transaction(MASKED_STORE, "readonly");
+        const store = transaction.objectStore(MASKED_STORE);
+        const request = store.getAll();
+        request.onsuccess = async () => {
+          const result = Array.isArray(request.result)
+            ? (request.result as (UnifiedTx | StoredTransaction)[])
+            : [];
+          try {
+            const prepared = await Promise.all(
+              result.map(async (entry) => {
+                const unified = cloneUnifiedTx(entry);
+                const hash =
+                  typeof (entry as StoredTransaction).hash === "string"
+                    ? (entry as StoredTransaction).hash
+                    : await computeUnifiedTxHash(unified);
+                return { ...unified, hash } satisfies StoredTransaction;
+              }),
+            );
+            resolve(prepared);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        };
+        request.onerror = () => {
+          reject(request.error ?? new Error("Failed to read from IndexedDB."));
+        };
+      }),
+  );
 }
 
 export async function clearMaskedTransactions(): Promise<void> {

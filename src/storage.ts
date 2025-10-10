@@ -10,6 +10,7 @@ import {
   storeMaskedTransactions as storeMaskedTransactionsInDb,
   storeRawTransactions as storeRawTransactionsInDb,
 } from "./indexedDbStorage.js";
+import type { StoredTransaction } from "./indexedDbStorage.js";
 
 declare global {
   interface Window {
@@ -30,6 +31,24 @@ function resolveApiBase(): string {
 }
 
 const API_BASE_URL = resolveApiBase();
+
+const maskedTransactionsStorage: {
+  loadSnapshot: () => Promise<StoredTransaction[]>;
+  store: (entries: UnifiedTx[], source?: UnifiedTx[]) => Promise<StoredTransaction[]>;
+} = {
+  loadSnapshot: loadMaskedTransactionsSnapshot,
+  store: storeMaskedTransactionsInDb,
+};
+
+export function __setMaskedTransactionsStorageForTests(
+  overrides: Partial<typeof maskedTransactionsStorage>,
+): () => void {
+  const previous = { ...maskedTransactionsStorage };
+  Object.assign(maskedTransactionsStorage, overrides);
+  return () => {
+    Object.assign(maskedTransactionsStorage, previous);
+  };
+}
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
   void promise.catch((error) => {
@@ -111,7 +130,7 @@ export async function initializeStorage(): Promise<void> {
       const maskedSource =
         masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
       const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
-      await storeMaskedTransactionsInDb(sanitizedMasked, transactionsCache);
+      await maskedTransactionsStorage.store(sanitizedMasked, transactionsCache);
       initialized = true;
     })().catch((error) => {
       initializationPromise = null;
@@ -449,16 +468,18 @@ export function loadMaskedTransactions(): UnifiedTx[] {
 
 export async function saveMaskedTransactions(entries: UnifiedTx[]): Promise<void> {
   const updated = updateMaskedTransactionsCache(entries);
-  await storeMaskedTransactionsInDb(updated, transactionsCache);
+  await maskedTransactionsStorage.store(updated, transactionsCache);
 }
 
 export async function persistMaskedTransactions(): Promise<void> {
-  const stored = await loadMaskedTransactionsSnapshot();
-  const updated = updateMaskedTransactionsCache(stored);
-  await storeMaskedTransactionsInDb(updated, transactionsCache);
+  const stored = await maskedTransactionsStorage.loadSnapshot();
+  const snapshotTransactions = stored.map(({ hash: _hash, ...entry }) => entry);
+  const updated = updateMaskedTransactionsCache(snapshotTransactions);
+  const persisted = await maskedTransactionsStorage.store(updated, transactionsCache);
+  const payload = persisted.map(({ hash, ...entry }) => ({ ...entry, booking_hash: hash }));
   await apiRequest("/transactions/masked", {
     method: "POST",
-    body: JSON.stringify({ transactions: updated }),
+    body: JSON.stringify({ transactions: payload }),
   });
 }
 
