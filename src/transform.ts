@@ -44,8 +44,7 @@ function isTransactionEmpty(tx: UnifiedTx): boolean {
     tx.booking_date.trim() === "" &&
     tx.booking_text.trim() === "" &&
     tx.booking_type.trim() === "" &&
-    tx.booking_amount.trim() === "" &&
-    tx.booking_account.trim() === ""
+    tx.booking_amount.trim() === ""
   );
 }
 
