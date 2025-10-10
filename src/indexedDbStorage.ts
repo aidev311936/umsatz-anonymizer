@@ -203,6 +203,7 @@ function cloneUnifiedTx(tx: UnifiedTx): UnifiedTx {
     booking_date_raw: tx.booking_date_raw,
     booking_text: tx.booking_text,
     booking_type: tx.booking_type,
+    booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
   };
 }
 
@@ -222,7 +223,13 @@ async function prepareStoredTransactions(entries: UnifiedTx[]): Promise<StoredTr
 }
 
 function transactionLinkKey(entry: UnifiedTx): string {
-  return [entry.bank_name, entry.booking_date_raw, entry.booking_type, entry.booking_amount].join("|");
+  return [
+    entry.bank_name,
+    entry.booking_date_raw,
+    entry.booking_type,
+    entry.booking_amount,
+    entry.booking_account ?? "",
+  ].join("|");
 }
 
 async function buildHashQueues(source: UnifiedTx[]): Promise<Map<string, string[]>> {

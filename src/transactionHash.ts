@@ -7,6 +7,7 @@ type HashRelevantFields = Pick<UnifiedTx,
   | "booking_text"
   | "booking_type"
   | "booking_amount"
+  | "booking_account"
 >;
 
 function normalizeTransaction(tx: UnifiedTx): Required<HashRelevantFields> {
@@ -15,6 +16,7 @@ function normalizeTransaction(tx: UnifiedTx): Required<HashRelevantFields> {
     booking_text: tx.booking_text ?? "",
     booking_type: tx.booking_type ?? "",
     booking_amount: tx.booking_amount ?? "",
+    booking_account: tx.booking_account ?? "",
   };
 }
 

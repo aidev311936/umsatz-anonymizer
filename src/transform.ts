@@ -44,7 +44,8 @@ function isTransactionEmpty(tx: UnifiedTx): boolean {
     tx.booking_date.trim() === "" &&
     tx.booking_text.trim() === "" &&
     tx.booking_type.trim() === "" &&
-    tx.booking_amount.trim() === ""
+    tx.booking_amount.trim() === "" &&
+    tx.booking_account.trim() === ""
   );
 }
 
@@ -53,6 +54,7 @@ export function applyMapping(
   header: string[],
   mapping: MappingSelection,
   bankName: string,
+  bookingAccount: string,
   displaySettings: DisplaySettings
 ): UnifiedTx[] {
   const indexMap = createIndexMap(header);
@@ -93,6 +95,7 @@ export function applyMapping(
       booking_text: bookingText,
       booking_type: bookingType,
       booking_amount: bookingAmount,
+      booking_account: bookingAccount,
     };
 
     if (!isTransactionEmpty(tx)) {
