@@ -3,14 +3,23 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, } from "./storage.js";
+import { appendTransactions, initializeStorage, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, persistMaskedTransactions, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
 import { formatBookingAmount, formatTransactionsForDisplay, sanitizeDisplaySettings, } from "./displaySettings.js";
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
+import * as auth from "./auth.js";
 const CONFIG_MAPPING_KEY = "mapping_to_target_schema";
 const CONFIG_DISPLAY_KEY = "display_settings";
 const CONFIG_RULES_KEY = "anonymization_rules";
+const mainElement = document.querySelector("main");
+const tokenLoginContainer = document.getElementById("tokenLoginContainer");
+const tokenForm = document.getElementById("tokenLogin");
+const tokenInputField = document.getElementById("tokenLoginForm");
+const tokenErrorElement = document.getElementById("tokenError");
+const tokenSubmitButton = tokenForm?.querySelector('button[type="submit"]');
+const requestTokenButton = document.getElementById("requestTokenButton");
+const logoutButton = document.getElementById("logoutButton");
 const fileInput = document.getElementById("csvInput");
 const bankNameInput = document.getElementById("bankName");
 const mappingContainer = document.getElementById("mappingContainer");
@@ -37,6 +46,7 @@ let anonymizedActive = false;
 let anonymizedCache = [];
 let lastAnonymizationWarnings = [];
 let displaySettings = loadDisplaySettings();
+let appInitialized = false;
 function getConfiguredRules() {
     if (rulesController) {
         return rulesController.getRules();
@@ -50,6 +60,14 @@ function assertElement(value, message) {
     }
     return value;
 }
+const ensuredMainElement = assertElement(mainElement, "Hauptbereich nicht gefunden");
+const ensuredTokenLoginContainer = assertElement(tokenLoginContainer, "Token-Anmeldecontainer nicht gefunden");
+const ensuredTokenForm = assertElement(tokenForm, "Token-Anmeldeformular fehlt");
+const ensuredTokenInput = assertElement(tokenInputField, "Token Eingabefeld fehlt");
+const ensuredTokenError = assertElement(tokenErrorElement, "Token Fehlermeldungsbereich fehlt");
+const ensuredTokenSubmitButton = assertElement(tokenSubmitButton, "Token Absenden Button fehlt");
+const ensuredRequestTokenButton = assertElement(requestTokenButton, "Token anfordern Button fehlt");
+const ensuredLogoutButton = assertElement(logoutButton, "Logout Button fehlt");
 const ensuredFileInput = assertElement(fileInput, "CSV Eingabefeld nicht gefunden");
 const ensuredBankNameInput = assertElement(bankNameInput, "Banknamenfeld nicht gefunden");
 const ensuredMappingContainer = assertElement(mappingContainer, "Mapping-Container nicht gefunden");
@@ -73,6 +91,218 @@ ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_f
 function setStatus(message, type = "info") {
     ensuredStatusArea.textContent = message;
     ensuredStatusArea.setAttribute("data-status", type);
+}
+function createImportProgressModal(total) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "import-progress-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "import-progress-modal";
+    const title = document.createElement("h2");
+    title.textContent = "Import läuft …";
+    modal.appendChild(title);
+    const description = document.createElement("p");
+    description.className = "import-progress-description";
+    description.textContent = `Importiere ${total} Umsätze …`;
+    modal.appendChild(description);
+    const progressBar = document.createElement("progress");
+    progressBar.max = Math.max(1, total);
+    progressBar.value = 0;
+    modal.appendChild(progressBar);
+    const progressLabel = document.createElement("div");
+    progressLabel.className = "import-progress-label";
+    progressLabel.textContent = `0 / ${total}`;
+    modal.appendChild(progressLabel);
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = "Schließen";
+    closeButton.hidden = true;
+    closeButton.addEventListener("click", () => {
+        close();
+    });
+    modal.appendChild(closeButton);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    let closed = false;
+    const close = () => {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        backdrop.remove();
+    };
+    return {
+        update(imported, totalCount) {
+            progressBar.max = Math.max(1, totalCount);
+            progressBar.value = Math.min(imported, totalCount);
+            progressLabel.textContent = `${imported} / ${totalCount}`;
+        },
+        complete(imported, totalCount) {
+            title.textContent = "Import abgeschlossen";
+            description.textContent = `${imported} von ${totalCount} Umsätzen gespeichert.`;
+            progressBar.max = Math.max(1, totalCount);
+            progressBar.value = Math.min(imported, totalCount);
+            progressLabel.textContent = `${imported} / ${totalCount}`;
+            closeButton.hidden = false;
+            closeButton.focus();
+        },
+        fail(message) {
+            title.textContent = "Import fehlgeschlagen";
+            description.textContent = message ?? "Bitte prüfen Sie die Konsole für Details.";
+            closeButton.hidden = false;
+            closeButton.focus();
+        },
+    };
+}
+function clearTokenError() {
+    ensuredTokenError.textContent = "";
+    ensuredTokenError.hidden = true;
+}
+function setTokenError(message) {
+    ensuredTokenError.textContent = message;
+    ensuredTokenError.hidden = false;
+}
+function showLogin(message) {
+    ensuredMainElement.hidden = true;
+    ensuredTokenLoginContainer.hidden = false;
+    if (message) {
+        setTokenError(message);
+    }
+    else {
+        clearTokenError();
+    }
+    ensuredTokenInput.focus();
+}
+function showMain() {
+    ensuredTokenLoginContainer.hidden = true;
+    ensuredMainElement.hidden = false;
+    clearTokenError();
+}
+function setTokenFormDisabled(disabled) {
+    ensuredTokenInput.disabled = disabled;
+    ensuredTokenSubmitButton.disabled = disabled;
+    ensuredRequestTokenButton.disabled = disabled;
+}
+function handleLogout() {
+    void auth.logout();
+    clearPersistentData();
+    anonymizedActive = false;
+    anonymizedCache = [];
+    lastAnonymizationWarnings = [];
+    transactions = [];
+    detectedHeader = null;
+    renderTransactions([]);
+    ensuredAnonymizeButton.textContent = "Anonymisieren";
+    ensuredSaveMaskedButton.disabled = true;
+    displaySettings = loadDisplaySettings();
+    ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+    ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
+    ensuredTokenInput.value = "";
+    setStatus("Bitte melden Sie sich erneut an.", "info");
+    showLogin("Sie wurden abgemeldet.");
+}
+function setupAuthUI() {
+    ensuredTokenForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void handleTokenSubmission();
+    });
+    ensuredRequestTokenButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        void handleTokenRequest();
+    });
+    ensuredLogoutButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleLogout();
+    });
+}
+async function handleTokenSubmission() {
+    clearTokenError();
+    const rawToken = ensuredTokenInput.value.trim();
+    if (!rawToken) {
+        setTokenError("Bitte geben Sie ein Token ein.");
+        return;
+    }
+    setTokenFormDisabled(true);
+    try {
+        const result = await auth.validateToken(rawToken);
+        ensuredTokenInput.value = "";
+        await initializeStorage();
+        handleAuthenticated(result.message ?? "Authentifizierung erfolgreich.");
+    }
+    catch (error) {
+        if (error instanceof auth.AuthError) {
+            setTokenError(error.message);
+        }
+        else if (error instanceof Error) {
+            setTokenError(error.message);
+        }
+        else {
+            setTokenError("Unbekannter Fehler bei der Anmeldung.");
+        }
+    }
+    finally {
+        setTokenFormDisabled(false);
+    }
+}
+async function handleTokenRequest() {
+    clearTokenError();
+    setTokenFormDisabled(true);
+    try {
+        const result = await auth.requestNewToken();
+        ensuredTokenInput.value = "";
+        await initializeStorage();
+        handleAuthenticated(result.message ?? "Es wurde ein neues Token erstellt und gespeichert.");
+    }
+    catch (error) {
+        if (error instanceof auth.AuthError) {
+            setTokenError(error.message);
+        }
+        else if (error instanceof Error) {
+            setTokenError(error.message);
+        }
+        else {
+            setTokenError("Neues Token konnte nicht angefordert werden.");
+        }
+    }
+    finally {
+        setTokenFormDisabled(false);
+    }
+}
+function hydrateTransactionsFromStorage() {
+    transactions = loadTransactions();
+    anonymizedActive = false;
+    anonymizedCache = [];
+    lastAnonymizationWarnings = [];
+    renderTransactions(transactions);
+    ensuredAnonymizeButton.textContent = "Anonymisieren";
+    ensuredSaveMaskedButton.disabled = true;
+    const masked = loadMaskedTransactions();
+    if (masked.length > 0) {
+        setStatus("Es sind bereits anonymisierte Daten gespeichert.", "info");
+    }
+}
+function hydrateRulesFromStorage() {
+    if (!rulesController) {
+        return;
+    }
+    const { rules } = loadAnonymizationRules();
+    rulesController.setRules(rules);
+}
+function handleAuthenticated(message) {
+    displaySettings = loadDisplaySettings();
+    ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+    ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
+    if (!appInitialized) {
+        init();
+        appInitialized = true;
+    }
+    else {
+        hydrateTransactionsFromStorage();
+        hydrateRulesFromStorage();
+    }
+    showMain();
+    if (message) {
+        setStatus(message, "info");
+    }
 }
 function createTimestampedFilename(base, extension) {
     const datePart = new Date().toISOString().slice(0, 10);
@@ -347,7 +577,7 @@ function handleSaveMapping() {
         setStatus("Mapping gespeichert.", "info");
     }
 }
-function handleImport() {
+async function handleImport() {
     if (!detectedHeader || detectedHeader.header.length === 0) {
         setStatus("Bitte zuerst eine CSV-Datei laden.", "warning");
         return;
@@ -374,10 +604,35 @@ function handleImport() {
         setStatus("Keine Datenzeilen gefunden.", "warning");
         return;
     }
-    transactions = appendTransactions(transformed);
-    resetAnonymizationState();
-    renderTransactions(transactions);
-    setStatus(`${transformed.length} Umsätze importiert und gespeichert.`, "info");
+    const progressModal = createImportProgressModal(transformed.length);
+    try {
+        const result = await appendTransactions(transformed, {
+            onProgress: (_processed, totalCount, importedCount) => {
+                progressModal.update(importedCount, totalCount);
+            },
+        });
+        progressModal.complete(result.addedCount, transformed.length);
+        transactions = result.transactions;
+        resetAnonymizationState();
+        renderTransactions(transactions);
+        const messages = [];
+        if (result.addedCount > 0) {
+            messages.push(`${result.addedCount} Umsätze importiert und gespeichert.`);
+        }
+        else {
+            messages.push("Keine neuen Umsätze importiert.");
+        }
+        if (result.skippedDuplicates > 0) {
+            messages.push(`${result.skippedDuplicates} Duplikate übersprungen.`);
+        }
+        const statusType = result.addedCount > 0 ? "info" : "warning";
+        setStatus(messages.join(" "), statusType);
+    }
+    catch (error) {
+        console.error("appendTransactions failed", error);
+        progressModal.fail("Umsätze konnten nicht gespeichert werden.");
+        setStatus("Fehler beim Speichern der Umsätze.", "error");
+    }
 }
 function handleBankNameChange() {
     if (!mappingController) {
@@ -406,6 +661,7 @@ function handleToggleAnonymization() {
         const rules = getConfiguredRules();
         const result = applyAnonymization(transactions, rules);
         anonymizedCache = result.data;
+        void saveMaskedTransactions(anonymizedCache);
         lastAnonymizationWarnings = result.warnings;
         anonymizedActive = true;
         ensuredAnonymizeButton.textContent = "Original anzeigen";
@@ -431,13 +687,21 @@ function handleToggleAnonymization() {
         }
     }
 }
-function handleSaveMaskedCopy() {
+async function handleSaveMaskedCopy() {
     if (!anonymizedActive || anonymizedCache.length === 0) {
         setStatus("Keine anonymisierten Daten zum Speichern vorhanden.", "warning");
         return;
     }
-    saveMaskedTransactions(anonymizedCache);
-    setStatus("Anonymisierte Kopie gespeichert.", "info");
+    setStatus("Anonymisierte Kopie wird gespeichert ...", "info");
+    try {
+        await saveMaskedTransactions(anonymizedCache);
+        await persistMaskedTransactions();
+        setStatus("Anonymisierte Kopie an Postgres übertragen.", "info");
+    }
+    catch (error) {
+        console.error("persistMaskedTransactions failed", error);
+        setStatus("Fehler beim Speichern der anonymisierten Daten.", "error");
+    }
 }
 function handleDownloadMaskedCsv() {
     const masked = loadMaskedTransactions();
@@ -616,12 +880,7 @@ function handleApplySingleRule(rule) {
     }
 }
 function init() {
-    transactions = loadTransactions();
-    renderTransactions(transactions);
-    const masked = loadMaskedTransactions();
-    if (masked.length > 0) {
-        setStatus("Es sind bereits anonymisierte Daten gespeichert.", "info");
-    }
+    hydrateTransactionsFromStorage();
     ensuredFileInput.addEventListener("change", (event) => {
         const input = event.currentTarget;
         const file = input.files?.[0];
@@ -636,7 +895,7 @@ function init() {
     });
     ensuredImportButton.addEventListener("click", (event) => {
         event.preventDefault();
-        handleImport();
+        void handleImport();
     });
     ensuredApplyDisplaySettingsButton.addEventListener("click", (event) => {
         event.preventDefault();
@@ -648,7 +907,7 @@ function init() {
     });
     ensuredSaveMaskedButton.addEventListener("click", (event) => {
         event.preventDefault();
-        handleSaveMaskedCopy();
+        void handleSaveMaskedCopy();
     });
     ensuredDownloadMaskedButton.addEventListener("click", (event) => {
         event.preventDefault();
@@ -672,8 +931,7 @@ function init() {
         input.value = "";
     });
     rulesController = buildRulesUI(ensuredRulesContainer);
-    const { rules } = loadAnonymizationRules();
-    rulesController.setRules(rules);
+    hydrateRulesFromStorage();
     ensuredRulesContainer.addEventListener("ruleapply", (event) => {
         const customEvent = event;
         if (customEvent.detail) {
@@ -685,4 +943,28 @@ function init() {
         handleSaveRules();
     });
 }
-init();
+async function bootstrap() {
+    setupAuthUI();
+    try {
+        await auth.ensureAuthenticated();
+        await initializeStorage();
+        handleAuthenticated();
+    }
+    catch (error) {
+        if (error instanceof auth.AuthError) {
+            if (error.code === "NO_TOKEN") {
+                showLogin();
+            }
+            else {
+                showLogin(error.message);
+            }
+        }
+        else if (error instanceof Error) {
+            showLogin(error.message);
+        }
+        else {
+            showLogin("Authentifizierung fehlgeschlagen.");
+        }
+    }
+}
+void bootstrap();

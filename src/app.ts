@@ -5,6 +5,7 @@ import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
 import {
   appendTransactions,
+  initializeStorage,
   loadDisplaySettings,
   loadAnonymizationRules,
   loadBankMappings,
@@ -12,11 +13,13 @@ import {
   importBankMappings,
   loadMaskedTransactions,
   loadTransactions,
+  clearPersistentData,
   saveBankMapping,
   saveDisplaySettings,
   saveAnonymizationRules,
   saveTransactions,
   saveMaskedTransactions,
+  persistMaskedTransactions,
 } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI, RulesUIController } from "./rulesUI.js";
@@ -27,12 +30,24 @@ import {
 } from "./displaySettings.js";
 import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
+import * as auth from "./auth.js";
 
 type MappingSelection = Omit<BankMapping, "bank_name">;
 
 const CONFIG_MAPPING_KEY = "mapping_to_target_schema";
 const CONFIG_DISPLAY_KEY = "display_settings";
 const CONFIG_RULES_KEY = "anonymization_rules";
+
+const mainElement = document.querySelector("main") as HTMLElement | null;
+const tokenLoginContainer = document.getElementById("tokenLoginContainer");
+const tokenForm = document.getElementById("tokenLogin") as HTMLFormElement | null;
+const tokenInputField = document.getElementById("tokenLoginForm") as HTMLInputElement | null;
+const tokenErrorElement = document.getElementById("tokenError");
+const tokenSubmitButton = tokenForm?.querySelector(
+  'button[type="submit"]',
+) as HTMLButtonElement | null;
+const requestTokenButton = document.getElementById("requestTokenButton") as HTMLButtonElement | null;
+const logoutButton = document.getElementById("logoutButton") as HTMLButtonElement | null;
 
 const fileInput = document.getElementById("csvInput") as HTMLInputElement | null;
 const bankNameInput = document.getElementById("bankName") as HTMLInputElement | null;
@@ -63,6 +78,7 @@ let anonymizedActive = false;
 let anonymizedCache: UnifiedTx[] = [];
 let lastAnonymizationWarnings: string[] = [];
 let displaySettings: DisplaySettings = loadDisplaySettings();
+let appInitialized = false;
 
 function getConfiguredRules(): AnonRule[] {
   if (rulesController) {
@@ -78,6 +94,30 @@ function assertElement<T extends HTMLElement>(value: T | null, message: string):
   }
   return value;
 }
+
+const ensuredMainElement = assertElement(mainElement, "Hauptbereich nicht gefunden");
+const ensuredTokenLoginContainer = assertElement(
+  tokenLoginContainer,
+  "Token-Anmeldecontainer nicht gefunden",
+);
+const ensuredTokenForm = assertElement(tokenForm, "Token-Anmeldeformular fehlt");
+const ensuredTokenInput = assertElement(
+  tokenInputField,
+  "Token Eingabefeld fehlt",
+);
+const ensuredTokenError = assertElement(
+  tokenErrorElement,
+  "Token Fehlermeldungsbereich fehlt",
+);
+const ensuredTokenSubmitButton = assertElement(
+  tokenSubmitButton,
+  "Token Absenden Button fehlt",
+);
+const ensuredRequestTokenButton = assertElement(
+  requestTokenButton,
+  "Token anfordern Button fehlt",
+);
+const ensuredLogoutButton = assertElement(logoutButton, "Logout Button fehlt");
 
 const ensuredFileInput = assertElement(fileInput, "CSV Eingabefeld nicht gefunden");
 const ensuredBankNameInput = assertElement(bankNameInput, "Banknamenfeld nicht gefunden");
@@ -127,6 +167,241 @@ type StatusType = "info" | "error" | "warning";
 function setStatus(message: string, type: StatusType = "info"): void {
   ensuredStatusArea.textContent = message;
   ensuredStatusArea.setAttribute("data-status", type);
+}
+
+interface ImportProgressController {
+  update(imported: number, total: number): void;
+  complete(imported: number, total: number): void;
+  fail(message?: string): void;
+}
+
+function createImportProgressModal(total: number): ImportProgressController {
+  const backdrop = document.createElement("div");
+  backdrop.className = "import-progress-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "import-progress-modal";
+
+  const title = document.createElement("h2");
+  title.textContent = "Import läuft …";
+  modal.appendChild(title);
+
+  const description = document.createElement("p");
+  description.className = "import-progress-description";
+  description.textContent = `Importiere ${total} Umsätze …`;
+  modal.appendChild(description);
+
+  const progressBar = document.createElement("progress");
+  progressBar.max = Math.max(1, total);
+  progressBar.value = 0;
+  modal.appendChild(progressBar);
+
+  const progressLabel = document.createElement("div");
+  progressLabel.className = "import-progress-label";
+  progressLabel.textContent = `0 / ${total}`;
+  modal.appendChild(progressLabel);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.textContent = "Schließen";
+  closeButton.hidden = true;
+  closeButton.addEventListener("click", () => {
+    close();
+  });
+  modal.appendChild(closeButton);
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  let closed = false;
+  const close = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    backdrop.remove();
+  };
+
+  return {
+    update(imported, totalCount) {
+      progressBar.max = Math.max(1, totalCount);
+      progressBar.value = Math.min(imported, totalCount);
+      progressLabel.textContent = `${imported} / ${totalCount}`;
+    },
+    complete(imported, totalCount) {
+      title.textContent = "Import abgeschlossen";
+      description.textContent = `${imported} von ${totalCount} Umsätzen gespeichert.`;
+      progressBar.max = Math.max(1, totalCount);
+      progressBar.value = Math.min(imported, totalCount);
+      progressLabel.textContent = `${imported} / ${totalCount}`;
+      closeButton.hidden = false;
+      closeButton.focus();
+    },
+    fail(message) {
+      title.textContent = "Import fehlgeschlagen";
+      description.textContent = message ?? "Bitte prüfen Sie die Konsole für Details.";
+      closeButton.hidden = false;
+      closeButton.focus();
+    },
+  };
+}
+
+function clearTokenError(): void {
+  ensuredTokenError.textContent = "";
+  ensuredTokenError.hidden = true;
+}
+
+function setTokenError(message: string): void {
+  ensuredTokenError.textContent = message;
+  ensuredTokenError.hidden = false;
+}
+
+function showLogin(message?: string): void {
+  ensuredMainElement.hidden = true;
+  ensuredTokenLoginContainer.hidden = false;
+  if (message) {
+    setTokenError(message);
+  } else {
+    clearTokenError();
+  }
+  ensuredTokenInput.focus();
+}
+
+function showMain(): void {
+  ensuredTokenLoginContainer.hidden = true;
+  ensuredMainElement.hidden = false;
+  clearTokenError();
+}
+
+function setTokenFormDisabled(disabled: boolean): void {
+  ensuredTokenInput.disabled = disabled;
+  ensuredTokenSubmitButton.disabled = disabled;
+  ensuredRequestTokenButton.disabled = disabled;
+}
+
+function handleLogout(): void {
+  void auth.logout();
+  clearPersistentData();
+  anonymizedActive = false;
+  anonymizedCache = [];
+  lastAnonymizationWarnings = [];
+  transactions = [];
+  detectedHeader = null;
+  renderTransactions([]);
+  ensuredAnonymizeButton.textContent = "Anonymisieren";
+  ensuredSaveMaskedButton.disabled = true;
+  displaySettings = loadDisplaySettings();
+  ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+  ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
+  ensuredTokenInput.value = "";
+  setStatus("Bitte melden Sie sich erneut an.", "info");
+  showLogin("Sie wurden abgemeldet.");
+}
+
+function setupAuthUI(): void {
+  ensuredTokenForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void handleTokenSubmission();
+  });
+
+  ensuredRequestTokenButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    void handleTokenRequest();
+  });
+
+  ensuredLogoutButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleLogout();
+  });
+}
+
+async function handleTokenSubmission(): Promise<void> {
+  clearTokenError();
+  const rawToken = ensuredTokenInput.value.trim();
+  if (!rawToken) {
+    setTokenError("Bitte geben Sie ein Token ein.");
+    return;
+  }
+
+  setTokenFormDisabled(true);
+  try {
+    const result = await auth.validateToken(rawToken);
+    ensuredTokenInput.value = "";
+    await initializeStorage();
+    handleAuthenticated(result.message ?? "Authentifizierung erfolgreich.");
+  } catch (error) {
+    if (error instanceof auth.AuthError) {
+      setTokenError(error.message);
+    } else if (error instanceof Error) {
+      setTokenError(error.message);
+    } else {
+      setTokenError("Unbekannter Fehler bei der Anmeldung.");
+    }
+  } finally {
+    setTokenFormDisabled(false);
+  }
+}
+
+async function handleTokenRequest(): Promise<void> {
+  clearTokenError();
+  setTokenFormDisabled(true);
+  try {
+    const result = await auth.requestNewToken();
+    ensuredTokenInput.value = "";
+    await initializeStorage();
+    handleAuthenticated(
+      result.message ?? "Es wurde ein neues Token erstellt und gespeichert.",
+    );
+  } catch (error) {
+    if (error instanceof auth.AuthError) {
+      setTokenError(error.message);
+    } else if (error instanceof Error) {
+      setTokenError(error.message);
+    } else {
+      setTokenError("Neues Token konnte nicht angefordert werden.");
+    }
+  } finally {
+    setTokenFormDisabled(false);
+  }
+}
+
+function hydrateTransactionsFromStorage(): void {
+  transactions = loadTransactions();
+  anonymizedActive = false;
+  anonymizedCache = [];
+  lastAnonymizationWarnings = [];
+  renderTransactions(transactions);
+  ensuredAnonymizeButton.textContent = "Anonymisieren";
+  ensuredSaveMaskedButton.disabled = true;
+  const masked = loadMaskedTransactions();
+  if (masked.length > 0) {
+    setStatus("Es sind bereits anonymisierte Daten gespeichert.", "info");
+  }
+}
+
+function hydrateRulesFromStorage(): void {
+  if (!rulesController) {
+    return;
+  }
+  const { rules } = loadAnonymizationRules();
+  rulesController.setRules(rules);
+}
+
+function handleAuthenticated(message?: string): void {
+  displaySettings = loadDisplaySettings();
+  ensuredDateDisplayFormatInput.value = displaySettings.booking_date_display_format;
+  ensuredAmountDisplayFormatInput.value = displaySettings.booking_amount_display_format;
+  if (!appInitialized) {
+    init();
+    appInitialized = true;
+  } else {
+    hydrateTransactionsFromStorage();
+    hydrateRulesFromStorage();
+  }
+  showMain();
+  if (message) {
+    setStatus(message, "info");
+  }
 }
 
 function createTimestampedFilename(base: string, extension: string): string {
@@ -444,7 +719,7 @@ function handleSaveMapping(): void {
   }
 }
 
-function handleImport(): void {
+async function handleImport(): Promise<void> {
   if (!detectedHeader || detectedHeader.header.length === 0) {
     setStatus("Bitte zuerst eine CSV-Datei laden.", "warning");
     return;
@@ -477,10 +752,35 @@ function handleImport(): void {
     setStatus("Keine Datenzeilen gefunden.", "warning");
     return;
   }
-  transactions = appendTransactions(transformed);
-  resetAnonymizationState();
-  renderTransactions(transactions);
-  setStatus(`${transformed.length} Umsätze importiert und gespeichert.`, "info");
+  const progressModal = createImportProgressModal(transformed.length);
+  try {
+    const result = await appendTransactions(transformed, {
+      onProgress: (_processed, totalCount, importedCount) => {
+        progressModal.update(importedCount, totalCount);
+      },
+    });
+    progressModal.complete(result.addedCount, transformed.length);
+    transactions = result.transactions;
+    resetAnonymizationState();
+    renderTransactions(transactions);
+
+    const messages: string[] = [];
+    if (result.addedCount > 0) {
+      messages.push(`${result.addedCount} Umsätze importiert und gespeichert.`);
+    } else {
+      messages.push("Keine neuen Umsätze importiert.");
+    }
+    if (result.skippedDuplicates > 0) {
+      messages.push(`${result.skippedDuplicates} Duplikate übersprungen.`);
+    }
+
+    const statusType = result.addedCount > 0 ? "info" : "warning";
+    setStatus(messages.join(" "), statusType);
+  } catch (error) {
+    console.error("appendTransactions failed", error);
+    progressModal.fail("Umsätze konnten nicht gespeichert werden.");
+    setStatus("Fehler beim Speichern der Umsätze.", "error");
+  }
 }
 
 function handleBankNameChange(): void {
@@ -510,6 +810,7 @@ function handleToggleAnonymization(): void {
     const rules = getConfiguredRules();
     const result = applyAnonymization(transactions, rules);
     anonymizedCache = result.data;
+    void saveMaskedTransactions(anonymizedCache);
     lastAnonymizationWarnings = result.warnings;
     anonymizedActive = true;
     ensuredAnonymizeButton.textContent = "Original anzeigen";
@@ -533,13 +834,20 @@ function handleToggleAnonymization(): void {
   }
 }
 
-function handleSaveMaskedCopy(): void {
+async function handleSaveMaskedCopy(): Promise<void> {
   if (!anonymizedActive || anonymizedCache.length === 0) {
     setStatus("Keine anonymisierten Daten zum Speichern vorhanden.", "warning");
     return;
   }
-  saveMaskedTransactions(anonymizedCache);
-  setStatus("Anonymisierte Kopie gespeichert.", "info");
+  setStatus("Anonymisierte Kopie wird gespeichert ...", "info");
+  try {
+    await saveMaskedTransactions(anonymizedCache);
+    await persistMaskedTransactions();
+    setStatus("Anonymisierte Kopie an Postgres übertragen.", "info");
+  } catch (error) {
+    console.error("persistMaskedTransactions failed", error);
+    setStatus("Fehler beim Speichern der anonymisierten Daten.", "error");
+  }
 }
 
 function handleDownloadMaskedCsv(): void {
@@ -736,12 +1044,7 @@ function handleApplySingleRule(rule: AnonRule): void {
 }
 
 function init(): void {
-  transactions = loadTransactions();
-  renderTransactions(transactions);
-  const masked = loadMaskedTransactions();
-  if (masked.length > 0) {
-    setStatus("Es sind bereits anonymisierte Daten gespeichert.", "info");
-  }
+  hydrateTransactionsFromStorage();
 
   ensuredFileInput.addEventListener("change", (event) => {
     const input = event.currentTarget as HTMLInputElement;
@@ -758,7 +1061,7 @@ function init(): void {
   });
   ensuredImportButton.addEventListener("click", (event) => {
     event.preventDefault();
-    handleImport();
+    void handleImport();
   });
   ensuredApplyDisplaySettingsButton.addEventListener("click", (event) => {
     event.preventDefault();
@@ -770,7 +1073,7 @@ function init(): void {
   });
   ensuredSaveMaskedButton.addEventListener("click", (event) => {
     event.preventDefault();
-    handleSaveMaskedCopy();
+    void handleSaveMaskedCopy();
   });
   ensuredDownloadMaskedButton.addEventListener("click", (event) => {
     event.preventDefault();
@@ -795,8 +1098,7 @@ function init(): void {
   });
 
   rulesController = buildRulesUI(ensuredRulesContainer);
-  const { rules } = loadAnonymizationRules();
-  rulesController.setRules(rules);
+  hydrateRulesFromStorage();
 
   ensuredRulesContainer.addEventListener("ruleapply", (event) => {
     const customEvent = event as CustomEvent<AnonRule>;
@@ -811,4 +1113,26 @@ function init(): void {
   });
 }
 
-init();
+async function bootstrap(): Promise<void> {
+  setupAuthUI();
+
+  try {
+    await auth.ensureAuthenticated();
+    await initializeStorage();
+    handleAuthenticated();
+  } catch (error) {
+    if (error instanceof auth.AuthError) {
+      if (error.code === "NO_TOKEN") {
+        showLogin();
+      } else {
+        showLogin(error.message);
+      }
+    } else if (error instanceof Error) {
+      showLogin(error.message);
+    } else {
+      showLogin("Authentifizierung fehlgeschlagen.");
+    }
+  }
+}
+
+void bootstrap();
