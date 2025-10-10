@@ -1,4 +1,4 @@
-const test = require("node:test");
+const { test, mock } = require("node:test");
 const assert = require("node:assert/strict");
 const request = require("supertest");
 const { createApp } = require("../app.js");
@@ -261,6 +261,52 @@ test("POST /transactions stores sanitized entries", async () => {
   assert.deepEqual(stored[0], payload.transactions[0]);
 });
 
+test("POST /transactions/masked stores booking hash", async () => {
+  const replaceMaskedTransactions = createSpy(async () => undefined);
+  const db = {
+    createToken: async () => ({}),
+    touchToken: async () => ({
+      token: "test",
+      created_on: "2024-01-01T00:00:00.000Z",
+      accessed_on: "2024-01-01T00:00:00.000Z",
+    }),
+    tokenExists: async () => true,
+    getSettings: async () => ({}),
+    updateSettings: async () => ({}),
+    listTransactions: async () => [],
+    replaceTransactions: async () => undefined,
+    readMaskedTransactions: async () => [],
+    replaceMaskedTransactions,
+    listBankMappings: async () => [],
+    upsertBankMapping: async () => undefined,
+    clearBankMappings: async () => undefined,
+    clearTransactions: async () => undefined,
+  };
+
+  const app = createApp({ db });
+  const entry = {
+    bank_name: "Test Bank",
+    booking_text: "Payment",
+    booking_amount: "100.00",
+    booking_date: "2024-01-15",
+    booking_date_raw: "15.01.2024",
+    booking_date_iso: "2024-01-15T00:00:00.000Z",
+    booking_type: "transfer",
+    booking_hash: "hash123",
+  };
+
+  await request(app)
+    .post("/transactions/masked")
+    .set("Cookie", "umsatz_token=test")
+    .send({ transactions: [entry] })
+    .expect(204);
+
+  assert.equal(replaceMaskedTransactions.calls.length, 1);
+  assert.equal(replaceMaskedTransactions.calls[0][0], "test");
+  assert.equal(replaceMaskedTransactions.calls[0][1].length, 1);
+  assert.deepEqual(replaceMaskedTransactions.calls[0][1][0], entry);
+});
+
 test("routes are reachable under configured API base path", async () => {
   let latestToken = "";
   const db = {
@@ -300,4 +346,70 @@ test("routes are reachable under configured API base path", async () => {
     .get("/settings")
     .set("Cookie", `umsatz_token=${token}`)
     .expect(200, { settings: { foo: "bar" } });
+});
+
+test("persistMaskedTransactions posts booking hashes to backend", async () => {
+  const originalDocument = global.document;
+  global.document = { querySelector: () => null };
+
+  const snapshot = [
+    {
+      bank_name: "Test Bank",
+      booking_text: "Payment",
+      booking_amount: "100.00",
+      booking_date: "2024-01-15",
+      booking_date_raw: "15.01.2024",
+      booking_date_iso: "2024-01-15T00:00:00.000Z",
+      booking_type: "transfer",
+      hash: "hash123",
+    },
+  ];
+
+  const fetchCalls = [];
+  mock.method(global, "fetch", async (url, init = {}) => {
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      status: 200,
+      text: async () => "{}",
+    };
+  });
+
+  try {
+    const storageModule = await import("../../dist/storage.js");
+    const restoreStorage = storageModule.__setMaskedTransactionsStorageForTests({
+      loadSnapshot: async () => snapshot,
+      store: async () => snapshot,
+    });
+    try {
+      await storageModule.persistMaskedTransactions();
+
+      assert.equal(fetchCalls.length, 1);
+      assert.equal(fetchCalls[0].url, "/transactions/masked");
+      const body = JSON.parse(fetchCalls[0].init.body);
+      assert.deepEqual(body, {
+        transactions: [
+          {
+            bank_name: "Test Bank",
+            booking_text: "Payment",
+            booking_amount: "100.00",
+            booking_date: "2024-01-15",
+            booking_date_raw: "15.01.2024",
+            booking_date_iso: "2024-01-15T00:00:00.000Z",
+            booking_type: "transfer",
+            booking_hash: "hash123",
+          },
+        ],
+      });
+    } finally {
+      restoreStorage();
+    }
+  } finally {
+    mock.restoreAll();
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+  }
 });
