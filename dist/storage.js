@@ -1,5 +1,6 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
-import { appendRawTransactions as appendRawTransactionsInDb, clearAllIndexedDbData, initializeIndexedDbStorage, loadMaskedTransactionsSnapshot, storeMaskedTransactions as storeMaskedTransactionsInDb, storeRawTransactions as storeRawTransactionsInDb, } from "./indexedDbStorage.js";
+import { computeUnifiedTxHash } from "./transactionHash.js";
+import { addRawTransactionIfMissing, clearAllIndexedDbData, ensureIndexedDbReady, initializeIndexedDbStorage, loadMaskedTransactionsSnapshot, storeMaskedTransactions as storeMaskedTransactionsInDb, storeRawTransactions as storeRawTransactionsInDb, } from "./indexedDbStorage.js";
 function resolveApiBase() {
     const meta = document.querySelector('meta[name="backend-base-url"]');
     const metaContent = meta?.getAttribute("content")?.trim();
@@ -12,6 +13,17 @@ function resolveApiBase() {
     return "";
 }
 const API_BASE_URL = resolveApiBase();
+const maskedTransactionsStorage = {
+    loadSnapshot: loadMaskedTransactionsSnapshot,
+    store: storeMaskedTransactionsInDb,
+};
+export function __setMaskedTransactionsStorageForTests(overrides) {
+    const previous = { ...maskedTransactionsStorage };
+    Object.assign(maskedTransactionsStorage, overrides);
+    return () => {
+        Object.assign(maskedTransactionsStorage, previous);
+    };
+}
 function fireAndForget(promise, context) {
     void promise.catch((error) => {
         console.error(`${context} failed`, error);
@@ -85,7 +97,7 @@ export async function initializeStorage() {
             updateTransactionsCache(indexedDbSnapshot.rawTransactions);
             const maskedSource = masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
             const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
-            await storeMaskedTransactionsInDb(sanitizedMasked);
+            await maskedTransactionsStorage.store(sanitizedMasked, transactionsCache);
             initialized = true;
         })().catch((error) => {
             initializationPromise = null;
@@ -301,27 +313,63 @@ export function saveTransactions(entries) {
     const updated = updateTransactionsCache(entries);
     fireAndForget(storeRawTransactionsInDb(updated), "saveTransactions#indexedDb");
 }
-export function appendTransactions(entries) {
+export async function appendTransactions(entries, options) {
     const sanitizedNewEntries = entries.map(sanitizeTransaction);
-    const combined = transactionsCache.concat(sanitizedNewEntries);
+    const total = sanitizedNewEntries.length;
+    if (total === 0) {
+        return {
+            transactions: [...transactionsCache],
+            addedCount: 0,
+            skippedDuplicates: 0,
+        };
+    }
+    await ensureIndexedDbReady();
+    const uniqueEntries = [];
+    let skippedDuplicates = 0;
+    let processed = 0;
+    for (const entry of sanitizedNewEntries) {
+        const hash = await computeUnifiedTxHash(entry);
+        const added = await addRawTransactionIfMissing(entry, hash);
+        if (added) {
+            uniqueEntries.push(entry);
+        }
+        else {
+            skippedDuplicates += 1;
+        }
+        processed += 1;
+        options?.onProgress?.(processed, total, uniqueEntries.length);
+    }
+    if (uniqueEntries.length === 0) {
+        return {
+            transactions: [...transactionsCache],
+            addedCount: 0,
+            skippedDuplicates,
+        };
+    }
+    const combined = transactionsCache.concat(uniqueEntries);
     const updated = updateTransactionsCache(combined);
-    fireAndForget(appendRawTransactionsInDb(sanitizedNewEntries), "appendTransactions#indexedDb");
-    return updated;
+    return {
+        transactions: updated,
+        addedCount: uniqueEntries.length,
+        skippedDuplicates,
+    };
 }
 export function loadMaskedTransactions() {
     return [...maskedTransactionsCache];
 }
 export async function saveMaskedTransactions(entries) {
     const updated = updateMaskedTransactionsCache(entries);
-    await storeMaskedTransactionsInDb(updated);
+    await maskedTransactionsStorage.store(updated, transactionsCache);
 }
 export async function persistMaskedTransactions() {
-    const stored = await loadMaskedTransactionsSnapshot();
-    const updated = updateMaskedTransactionsCache(stored);
-    await storeMaskedTransactionsInDb(updated);
+    const stored = await maskedTransactionsStorage.loadSnapshot();
+    const snapshotTransactions = stored.map(({ hash: _hash, ...entry }) => entry);
+    const updated = updateMaskedTransactionsCache(snapshotTransactions);
+    const persisted = await maskedTransactionsStorage.store(updated, transactionsCache);
+    const payload = persisted.map(({ hash, ...entry }) => ({ ...entry, booking_hash: hash }));
     await apiRequest("/transactions/masked", {
         method: "POST",
-        body: JSON.stringify({ transactions: updated }),
+        body: JSON.stringify({ transactions: payload }),
     });
 }
 function isAnonRule(value) {

@@ -169,6 +169,83 @@ function setStatus(message: string, type: StatusType = "info"): void {
   ensuredStatusArea.setAttribute("data-status", type);
 }
 
+interface ImportProgressController {
+  update(imported: number, total: number): void;
+  complete(imported: number, total: number): void;
+  fail(message?: string): void;
+}
+
+function createImportProgressModal(total: number): ImportProgressController {
+  const backdrop = document.createElement("div");
+  backdrop.className = "import-progress-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "import-progress-modal";
+
+  const title = document.createElement("h2");
+  title.textContent = "Import läuft …";
+  modal.appendChild(title);
+
+  const description = document.createElement("p");
+  description.className = "import-progress-description";
+  description.textContent = `Importiere ${total} Umsätze …`;
+  modal.appendChild(description);
+
+  const progressBar = document.createElement("progress");
+  progressBar.max = Math.max(1, total);
+  progressBar.value = 0;
+  modal.appendChild(progressBar);
+
+  const progressLabel = document.createElement("div");
+  progressLabel.className = "import-progress-label";
+  progressLabel.textContent = `0 / ${total}`;
+  modal.appendChild(progressLabel);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.textContent = "Schließen";
+  closeButton.hidden = true;
+  closeButton.addEventListener("click", () => {
+    close();
+  });
+  modal.appendChild(closeButton);
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  let closed = false;
+  const close = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    backdrop.remove();
+  };
+
+  return {
+    update(imported, totalCount) {
+      progressBar.max = Math.max(1, totalCount);
+      progressBar.value = Math.min(imported, totalCount);
+      progressLabel.textContent = `${imported} / ${totalCount}`;
+    },
+    complete(imported, totalCount) {
+      title.textContent = "Import abgeschlossen";
+      description.textContent = `${imported} von ${totalCount} Umsätzen gespeichert.`;
+      progressBar.max = Math.max(1, totalCount);
+      progressBar.value = Math.min(imported, totalCount);
+      progressLabel.textContent = `${imported} / ${totalCount}`;
+      closeButton.hidden = false;
+      closeButton.focus();
+    },
+    fail(message) {
+      title.textContent = "Import fehlgeschlagen";
+      description.textContent = message ?? "Bitte prüfen Sie die Konsole für Details.";
+      closeButton.hidden = false;
+      closeButton.focus();
+    },
+  };
+}
+
 function clearTokenError(): void {
   ensuredTokenError.textContent = "";
   ensuredTokenError.hidden = true;
@@ -642,7 +719,7 @@ function handleSaveMapping(): void {
   }
 }
 
-function handleImport(): void {
+async function handleImport(): Promise<void> {
   if (!detectedHeader || detectedHeader.header.length === 0) {
     setStatus("Bitte zuerst eine CSV-Datei laden.", "warning");
     return;
@@ -675,10 +752,35 @@ function handleImport(): void {
     setStatus("Keine Datenzeilen gefunden.", "warning");
     return;
   }
-  transactions = appendTransactions(transformed);
-  resetAnonymizationState();
-  renderTransactions(transactions);
-  setStatus(`${transformed.length} Umsätze importiert und gespeichert.`, "info");
+  const progressModal = createImportProgressModal(transformed.length);
+  try {
+    const result = await appendTransactions(transformed, {
+      onProgress: (_processed, totalCount, importedCount) => {
+        progressModal.update(importedCount, totalCount);
+      },
+    });
+    progressModal.complete(result.addedCount, transformed.length);
+    transactions = result.transactions;
+    resetAnonymizationState();
+    renderTransactions(transactions);
+
+    const messages: string[] = [];
+    if (result.addedCount > 0) {
+      messages.push(`${result.addedCount} Umsätze importiert und gespeichert.`);
+    } else {
+      messages.push("Keine neuen Umsätze importiert.");
+    }
+    if (result.skippedDuplicates > 0) {
+      messages.push(`${result.skippedDuplicates} Duplikate übersprungen.`);
+    }
+
+    const statusType = result.addedCount > 0 ? "info" : "warning";
+    setStatus(messages.join(" "), statusType);
+  } catch (error) {
+    console.error("appendTransactions failed", error);
+    progressModal.fail("Umsätze konnten nicht gespeichert werden.");
+    setStatus("Fehler beim Speichern der Umsätze.", "error");
+  }
 }
 
 function handleBankNameChange(): void {
@@ -708,6 +810,7 @@ function handleToggleAnonymization(): void {
     const rules = getConfiguredRules();
     const result = applyAnonymization(transactions, rules);
     anonymizedCache = result.data;
+    void saveMaskedTransactions(anonymizedCache);
     lastAnonymizationWarnings = result.warnings;
     anonymizedActive = true;
     ensuredAnonymizeButton.textContent = "Original anzeigen";
@@ -958,7 +1061,7 @@ function init(): void {
   });
   ensuredImportButton.addEventListener("click", (event) => {
     event.preventDefault();
-    handleImport();
+    void handleImport();
   });
   ensuredApplyDisplaySettingsButton.addEventListener("click", (event) => {
     event.preventDefault();

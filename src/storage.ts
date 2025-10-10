@@ -1,13 +1,16 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
 import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
+import { computeUnifiedTxHash } from "./transactionHash.js";
 import {
-  appendRawTransactions as appendRawTransactionsInDb,
+  addRawTransactionIfMissing,
   clearAllIndexedDbData,
+  ensureIndexedDbReady,
   initializeIndexedDbStorage,
   loadMaskedTransactionsSnapshot,
   storeMaskedTransactions as storeMaskedTransactionsInDb,
   storeRawTransactions as storeRawTransactionsInDb,
 } from "./indexedDbStorage.js";
+import type { StoredTransaction } from "./indexedDbStorage.js";
 
 declare global {
   interface Window {
@@ -28,6 +31,24 @@ function resolveApiBase(): string {
 }
 
 const API_BASE_URL = resolveApiBase();
+
+const maskedTransactionsStorage: {
+  loadSnapshot: () => Promise<StoredTransaction[]>;
+  store: (entries: UnifiedTx[], source?: UnifiedTx[]) => Promise<StoredTransaction[]>;
+} = {
+  loadSnapshot: loadMaskedTransactionsSnapshot,
+  store: storeMaskedTransactionsInDb,
+};
+
+export function __setMaskedTransactionsStorageForTests(
+  overrides: Partial<typeof maskedTransactionsStorage>,
+): () => void {
+  const previous = { ...maskedTransactionsStorage };
+  Object.assign(maskedTransactionsStorage, overrides);
+  return () => {
+    Object.assign(maskedTransactionsStorage, previous);
+  };
+}
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
   void promise.catch((error) => {
@@ -109,7 +130,7 @@ export async function initializeStorage(): Promise<void> {
       const maskedSource =
         masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
       const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
-      await storeMaskedTransactionsInDb(sanitizedMasked);
+      await maskedTransactionsStorage.store(sanitizedMasked, transactionsCache);
       initialized = true;
     })().catch((error) => {
       initializationPromise = null;
@@ -381,15 +402,64 @@ export function saveTransactions(entries: UnifiedTx[]): void {
   fireAndForget(storeRawTransactionsInDb(updated), "saveTransactions#indexedDb");
 }
 
-export function appendTransactions(entries: UnifiedTx[]): UnifiedTx[] {
+export interface AppendTransactionsResult {
+  transactions: UnifiedTx[];
+  addedCount: number;
+  skippedDuplicates: number;
+}
+
+export interface AppendTransactionsOptions {
+  onProgress?: (processed: number, total: number, imported: number) => void;
+}
+
+export async function appendTransactions(
+  entries: UnifiedTx[],
+  options?: AppendTransactionsOptions,
+): Promise<AppendTransactionsResult> {
   const sanitizedNewEntries = entries.map(sanitizeTransaction);
-  const combined = transactionsCache.concat(sanitizedNewEntries);
+  const total = sanitizedNewEntries.length;
+  if (total === 0) {
+    return {
+      transactions: [...transactionsCache],
+      addedCount: 0,
+      skippedDuplicates: 0,
+    };
+  }
+
+  await ensureIndexedDbReady();
+
+  const uniqueEntries: UnifiedTx[] = [];
+  let skippedDuplicates = 0;
+  let processed = 0;
+
+  for (const entry of sanitizedNewEntries) {
+    const hash = await computeUnifiedTxHash(entry);
+    const added = await addRawTransactionIfMissing(entry, hash);
+    if (added) {
+      uniqueEntries.push(entry);
+    } else {
+      skippedDuplicates += 1;
+    }
+    processed += 1;
+    options?.onProgress?.(processed, total, uniqueEntries.length);
+  }
+
+  if (uniqueEntries.length === 0) {
+    return {
+      transactions: [...transactionsCache],
+      addedCount: 0,
+      skippedDuplicates,
+    };
+  }
+
+  const combined = transactionsCache.concat(uniqueEntries);
   const updated = updateTransactionsCache(combined);
-  fireAndForget(
-    appendRawTransactionsInDb(sanitizedNewEntries),
-    "appendTransactions#indexedDb",
-  );
-  return updated;
+
+  return {
+    transactions: updated,
+    addedCount: uniqueEntries.length,
+    skippedDuplicates,
+  };
 }
 
 export function loadMaskedTransactions(): UnifiedTx[] {
@@ -398,16 +468,18 @@ export function loadMaskedTransactions(): UnifiedTx[] {
 
 export async function saveMaskedTransactions(entries: UnifiedTx[]): Promise<void> {
   const updated = updateMaskedTransactionsCache(entries);
-  await storeMaskedTransactionsInDb(updated);
+  await maskedTransactionsStorage.store(updated, transactionsCache);
 }
 
 export async function persistMaskedTransactions(): Promise<void> {
-  const stored = await loadMaskedTransactionsSnapshot();
-  const updated = updateMaskedTransactionsCache(stored);
-  await storeMaskedTransactionsInDb(updated);
+  const stored = await maskedTransactionsStorage.loadSnapshot();
+  const snapshotTransactions = stored.map(({ hash: _hash, ...entry }) => entry);
+  const updated = updateMaskedTransactionsCache(snapshotTransactions);
+  const persisted = await maskedTransactionsStorage.store(updated, transactionsCache);
+  const payload = persisted.map(({ hash, ...entry }) => ({ ...entry, booking_hash: hash }));
   await apiRequest("/transactions/masked", {
     method: "POST",
-    body: JSON.stringify({ transactions: updated }),
+    body: JSON.stringify({ transactions: payload }),
   });
 }
 
