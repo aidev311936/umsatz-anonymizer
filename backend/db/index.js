@@ -106,6 +106,8 @@ function createDb(pool) {
           : typeof row.amount === "string"
           ? row.amount
           : "",
+      booking_account:
+        typeof row.booking_account === "string" ? row.booking_account : "",
     };
   }
 
@@ -117,7 +119,8 @@ function createDb(pool) {
               booking_date_iso,
               booking_text,
               booking_type,
-              booking_amount
+              booking_amount,
+              booking_account
          FROM masked_transactions
         WHERE token = $1 AND (booking_category IS NULL OR booking_category <> $2)
         ORDER BY created_on DESC, id DESC`,
@@ -136,7 +139,7 @@ function createDb(pool) {
         );
         if (entries.length > 0) {
           const insertText =
-            "INSERT INTO masked_transactions(token, bank_name, booking_date, booking_date_raw, booking_date_iso, booking_text, booking_type, booking_amount, booking_hash, booking_category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
+            "INSERT INTO masked_transactions(token, bank_name, booking_date, booking_date_raw, booking_date_iso, booking_text, booking_type, booking_amount, booking_account, booking_hash, booking_category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)";
           for (const entry of entries) {
             await client.query(insertText, [
               token,
@@ -147,6 +150,7 @@ function createDb(pool) {
               typeof entry.booking_text === "string" ? entry.booking_text : null,
               typeof entry.booking_type === "string" ? entry.booking_type : null,
               typeof entry.booking_amount === "string" ? entry.booking_amount : null,
+              typeof entry.booking_account === "string" ? entry.booking_account : null,
               typeof entry.booking_hash === "string" ? entry.booking_hash : null,
               null,
             ]);
@@ -168,7 +172,8 @@ function createDb(pool) {
               booking_date_iso,
               booking_text,
               booking_type,
-              booking_amount
+              booking_amount,
+              booking_account
          FROM masked_transactions
         WHERE token = $1 AND booking_category = $2
         ORDER BY created_on DESC, id DESC`,
@@ -187,7 +192,7 @@ function createDb(pool) {
         );
         if (entries.length > 0) {
           const insertText =
-            "INSERT INTO masked_transactions(token, bank_name, booking_date, booking_date_raw, booking_date_iso, booking_text, booking_type, booking_amount, booking_hash, booking_category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
+            "INSERT INTO masked_transactions(token, bank_name, booking_date, booking_date_raw, booking_date_iso, booking_text, booking_type, booking_amount, booking_account, booking_hash, booking_category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)";
           for (const entry of entries) {
             await client.query(insertText, [
               token,
@@ -198,6 +203,7 @@ function createDb(pool) {
               typeof entry.booking_text === "string" ? entry.booking_text : null,
               typeof entry.booking_type === "string" ? entry.booking_type : null,
               typeof entry.booking_amount === "string" ? entry.booking_amount : null,
+              typeof entry.booking_account === "string" ? entry.booking_account : null,
               typeof entry.booking_hash === "string" ? entry.booking_hash : null,
               MASKED_SNAPSHOT_CATEGORY,
             ]);
