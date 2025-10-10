@@ -14,6 +14,7 @@ const ALLOWED_TRANSACTION_KEYS = new Set([
   "booking_type",
   "booking_amount",
   "booking_hash",
+  "booking_account",
 ]);
 
 function parseOrigins(input) {
@@ -192,6 +193,9 @@ function isUnifiedTransaction(value) {
     return false;
   }
   if (typeof value.booking_type !== "string") {
+    return false;
+  }
+  if ("booking_account" in value && typeof value.booking_account !== "string") {
     return false;
   }
   if ("booking_hash" in value && typeof value.booking_hash !== "string") {
