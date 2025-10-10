@@ -167,6 +167,7 @@ function cloneUnifiedTx(tx) {
         booking_date_raw: tx.booking_date_raw,
         booking_text: tx.booking_text,
         booking_type: tx.booking_type,
+        booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
     };
 }
 export async function ensureIndexedDbReady() {
@@ -181,7 +182,13 @@ async function prepareStoredTransactions(entries) {
     return prepared;
 }
 function transactionLinkKey(entry) {
-    return [entry.bank_name, entry.booking_date_raw, entry.booking_type, entry.booking_amount].join("|");
+    return [
+        entry.bank_name,
+        entry.booking_date_raw,
+        entry.booking_type,
+        entry.booking_amount,
+        entry.booking_account ?? "",
+    ].join("|");
 }
 async function buildHashQueues(source) {
     const hashes = await Promise.all(source.map((entry) => computeUnifiedTxHash(entry)));

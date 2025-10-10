@@ -15,6 +15,7 @@ export interface UnifiedTx {
   booking_text: string;
   booking_type: string;
   booking_amount: string;
+  booking_account: string;
 }
 
 export interface DisplaySettings {

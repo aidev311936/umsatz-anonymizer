@@ -53,6 +53,7 @@ export function applyMapping(
   header: string[],
   mapping: MappingSelection,
   bankName: string,
+  bookingAccount: string,
   displaySettings: DisplaySettings
 ): UnifiedTx[] {
   const indexMap = createIndexMap(header);
@@ -93,6 +94,7 @@ export function applyMapping(
       booking_text: bookingText,
       booking_type: bookingType,
       booking_amount: bookingAmount,
+      booking_account: bookingAccount,
     };
 
     if (!isTransactionEmpty(tx)) {

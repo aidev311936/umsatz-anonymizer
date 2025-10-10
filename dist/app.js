@@ -22,6 +22,7 @@ const requestTokenButton = document.getElementById("requestTokenButton");
 const logoutButton = document.getElementById("logoutButton");
 const fileInput = document.getElementById("csvInput");
 const bankNameInput = document.getElementById("bankName");
+const bookingAccountInput = document.getElementById("bookingAccount");
 const mappingContainer = document.getElementById("mappingContainer");
 const saveMappingButton = document.getElementById("saveMappingButton");
 const importButton = document.getElementById("importButton");
@@ -70,6 +71,7 @@ const ensuredRequestTokenButton = assertElement(requestTokenButton, "Token anfor
 const ensuredLogoutButton = assertElement(logoutButton, "Logout Button fehlt");
 const ensuredFileInput = assertElement(fileInput, "CSV Eingabefeld nicht gefunden");
 const ensuredBankNameInput = assertElement(bankNameInput, "Banknamenfeld nicht gefunden");
+const ensuredBookingAccountInput = assertElement(bookingAccountInput, "Buchungskonto Eingabefeld fehlt");
 const ensuredMappingContainer = assertElement(mappingContainer, "Mapping-Container nicht gefunden");
 const ensuredSaveMappingButton = assertElement(saveMappingButton, "Mapping speichern Button fehlt");
 const ensuredImportButton = assertElement(importButton, "Import Button fehlt");
@@ -326,6 +328,7 @@ const CSV_COLUMNS = [
     "booking_text",
     "booking_type",
     "booking_amount",
+    "booking_account",
 ];
 function escapeCsvValue(value) {
     const needsEscaping = /[";\n\r]/.test(value);
@@ -599,7 +602,7 @@ async function handleImport() {
         return;
     }
     const rows = detectedHeader.dataRows;
-    const transformed = applyMapping(rows, detectedHeader.header, mapping, bankName, displaySettings);
+    const transformed = applyMapping(rows, detectedHeader.header, mapping, bankName, ensuredBookingAccountInput.value.trim(), displaySettings);
     if (transformed.length === 0) {
         setStatus("Keine Datenzeilen gefunden.", "warning");
         return;

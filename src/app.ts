@@ -51,6 +51,9 @@ const logoutButton = document.getElementById("logoutButton") as HTMLButtonElemen
 
 const fileInput = document.getElementById("csvInput") as HTMLInputElement | null;
 const bankNameInput = document.getElementById("bankName") as HTMLInputElement | null;
+const bookingAccountInput = document.getElementById(
+  "bookingAccount",
+) as HTMLInputElement | null;
 const mappingContainer = document.getElementById("mappingContainer");
 const saveMappingButton = document.getElementById("saveMappingButton") as HTMLButtonElement | null;
 const importButton = document.getElementById("importButton") as HTMLButtonElement | null;
@@ -121,6 +124,10 @@ const ensuredLogoutButton = assertElement(logoutButton, "Logout Button fehlt");
 
 const ensuredFileInput = assertElement(fileInput, "CSV Eingabefeld nicht gefunden");
 const ensuredBankNameInput = assertElement(bankNameInput, "Banknamenfeld nicht gefunden");
+const ensuredBookingAccountInput = assertElement(
+  bookingAccountInput,
+  "Buchungskonto Eingabefeld fehlt",
+);
 const ensuredMappingContainer = assertElement(mappingContainer, "Mapping-Container nicht gefunden");
 const ensuredSaveMappingButton = assertElement(saveMappingButton, "Mapping speichern Button fehlt");
 const ensuredImportButton = assertElement(importButton, "Import Button fehlt");
@@ -422,7 +429,13 @@ function triggerDownload(filename: string, content: string, mimeType: string): v
   URL.revokeObjectURL(url);
 }
 
-type CsvColumn = "bank_name" | "booking_date" | "booking_text" | "booking_type" | "booking_amount";
+type CsvColumn =
+  | "bank_name"
+  | "booking_date"
+  | "booking_text"
+  | "booking_type"
+  | "booking_amount"
+  | "booking_account";
 
 const CSV_COLUMNS: CsvColumn[] = [
   "bank_name",
@@ -430,6 +443,7 @@ const CSV_COLUMNS: CsvColumn[] = [
   "booking_text",
   "booking_type",
   "booking_amount",
+  "booking_account",
 ];
 
 function escapeCsvValue(value: string): string {
@@ -746,6 +760,7 @@ async function handleImport(): Promise<void> {
     detectedHeader.header,
     mapping,
     bankName,
+    ensuredBookingAccountInput.value.trim(),
     displaySettings
   );
   if (transformed.length === 0) {
