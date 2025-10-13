@@ -37,7 +37,7 @@ function isTransactionEmpty(tx) {
         tx.booking_type.trim() === "" &&
         tx.booking_amount.trim() === "");
 }
-export function applyMapping(rows, header, mapping, bankName, displaySettings) {
+export function applyMapping(rows, header, mapping, bankName, bookingAccount, displaySettings) {
     const indexMap = createIndexMap(header);
     const transactions = [];
     for (const row of rows) {
@@ -68,6 +68,7 @@ export function applyMapping(rows, header, mapping, bankName, displaySettings) {
             booking_text: bookingText,
             booking_type: bookingType,
             booking_amount: bookingAmount,
+            booking_account: bookingAccount,
         };
         if (!isTransactionEmpty(tx)) {
             transactions.push(tx);

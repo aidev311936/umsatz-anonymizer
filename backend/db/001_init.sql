@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS masked_transactions (
   booking_text TEXT,
   booking_type TEXT,
   booking_amount TEXT,
+  booking_account TEXT,
   booking_hash TEXT,
   booking_category TEXT,
   created_on TIMESTAMPTZ NOT NULL DEFAULT now(),

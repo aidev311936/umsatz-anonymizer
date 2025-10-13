@@ -295,6 +295,7 @@ function toUnifiedTx(value: unknown): UnifiedTx | null {
     booking_text?: unknown;
     booking_type?: unknown;
     booking_amount?: unknown;
+    booking_account?: unknown;
   };
   if (
     typeof maybe.bank_name !== "string" ||
@@ -327,6 +328,8 @@ function toUnifiedTx(value: unknown): UnifiedTx | null {
     booking_text: maybe.booking_text,
     booking_type: maybe.booking_type,
     booking_amount: maybe.booking_amount,
+    booking_account:
+      typeof maybe.booking_account === "string" ? maybe.booking_account : "",
   };
 }
 
@@ -345,6 +348,7 @@ function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
     booking_text: tx.booking_text,
     booking_type: tx.booking_type,
     booking_amount: tx.booking_amount,
+    booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
   };
 }
 

@@ -5,6 +5,7 @@ function normalizeTransaction(tx) {
         booking_text: tx.booking_text ?? "",
         booking_type: tx.booking_type ?? "",
         booking_amount: tx.booking_amount ?? "",
+        booking_account: tx.booking_account ?? "",
     };
 }
 function serializeTransaction(tx) {
