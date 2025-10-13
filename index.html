@@ -37,7 +37,14 @@
           <label for="csvInput">CSV wählen</label>
           <input id="csvInput" type="file" accept=".csv,text/csv" />
           <label for="bankName">Bankname</label>
-          <input id="bankName" type="text" placeholder="z. B. comdirect" />
+          <input
+            id="bankName"
+            type="text"
+            list="bankNameOptions"
+            placeholder="z. B. comdirect"
+            autocomplete="off"
+          />
+          <datalist id="bankNameOptions"></datalist>
           <label for="bookingAccount">Buchungskonto</label>
           <input
             id="bookingAccount"
@@ -54,6 +61,7 @@
         <div class="collapsible-content">
           <div id="mappingContainer"></div>
           <div class="button-row">
+            <button id="createMappingButton" type="button">Mapping erstellen</button>
             <button id="saveMappingButton" type="button">Mapping speichern</button>
             <button id="importButton" type="button">Import starten</button>
           </div>
