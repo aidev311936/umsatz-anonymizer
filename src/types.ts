@@ -18,6 +18,14 @@ export interface UnifiedTx {
   booking_account: string;
 }
 
+export interface TransactionImportSummary {
+  bank_name: string;
+  booking_account: string;
+  created_on: string | null;
+  first_booking_date: string;
+  last_booking_date: string;
+}
+
 export interface DisplaySettings {
   booking_date_display_format: string;
   booking_amount_display_format: string;

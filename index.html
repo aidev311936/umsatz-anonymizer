@@ -51,10 +51,37 @@
             type="text"
             placeholder="z. B. Girokonto"
           />
+          <div id="transactionImportsContainer" class="import-summary" aria-live="polite">
+            <p id="transactionImportsEmpty" class="import-summary-empty" role="status">
+              Noch wurden keine anonymisierten Buchungen an den Server übertragen.
+            </p>
+            <div
+              id="transactionImportsTableWrapper"
+              class="import-summary-table-wrapper"
+              role="region"
+              aria-live="polite"
+              aria-label="Bisherige anonymisierte Importe"
+              hidden
+            >
+              <table class="import-summary-table">
+                <caption class="sr-only">Bisherige anonymisierte Importe</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Bank</th>
+                    <th scope="col">Buchungskonto</th>
+                    <th scope="col">Importiert am</th>
+                    <th scope="col">Erste Buchung</th>
+                    <th scope="col">Letzte Buchung</th>
+                  </tr>
+                </thead>
+                <tbody id="transactionImportsBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </details>
 
-      <details class="collapsible-section" open>
+      <details class="collapsible-section">
         <summary>
           <h2>Mapping auf Zielschema</h2>
         </summary>
@@ -76,7 +103,7 @@
         </div>
       </details>
 
-      <details class="collapsible-section" open>
+      <details class="collapsible-section">
         <summary>
           <h2>Anzeigeeinstellungen</h2>
         </summary>
@@ -85,10 +112,14 @@
           <input
             id="dateDisplayFormat"
             type="text"
-            placeholder="z. B. dd.MM.yyyy HH:mm"
+            placeholder="z. B. dd.MM.yyyy"
           />
           <label for="amountDisplayFormat">Betragsformat (Anzeige)</label>
-          <input id="amountDisplayFormat" type="text" placeholder="z. B. #,##0.00" />
+          <input
+            id="amountDisplayFormat"
+            type="text"
+            placeholder="z. B. #.##0,00"
+          />
           <div class="button-row">
             <button id="applyDisplaySettingsButton" type="button">
               Anzeige aktualisieren
@@ -97,7 +128,7 @@
         </div>
       </details>
 
-      <details class="collapsible-section" open>
+      <details class="collapsible-section">
         <summary>
           <h2>Anonymisierungsregeln</h2>
         </summary>

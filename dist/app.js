@@ -3,7 +3,7 @@ import { detectHeader } from "./headerDetect.js";
 import { buildMappingUI } from "./mappingUI.js";
 import { applyMapping } from "./transform.js";
 import { renderTable } from "./render.js";
-import { appendTransactions, initializeStorage, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, persistMaskedTransactions, } from "./storage.js";
+import { appendTransactions, initializeStorage, loadDisplaySettings, loadAnonymizationRules, loadBankMappings, importAnonymizationRules, importBankMappings, loadMaskedTransactions, loadTransactions, clearPersistentData, saveBankMapping, saveDisplaySettings, saveAnonymizationRules, saveTransactions, saveMaskedTransactions, persistMaskedTransactions, fetchTransactionImportsFromBackend, loadTransactionImports, } from "./storage.js";
 import { applyAnonymization } from "./anonymize.js";
 import { buildRulesUI } from "./rulesUI.js";
 import { formatBookingAmount, formatTransactionsForDisplay, sanitizeDisplaySettings, } from "./displaySettings.js";
@@ -32,6 +32,9 @@ const saveMappingButton = document.getElementById("saveMappingButton");
 const importButton = document.getElementById("importButton");
 const statusArea = document.getElementById("statusArea");
 const tableBody = document.getElementById("transactionsBody");
+const transactionImportsTableWrapper = document.getElementById("transactionImportsTableWrapper");
+const transactionImportsBody = document.getElementById("transactionImportsBody");
+const transactionImportsEmptyState = document.getElementById("transactionImportsEmpty");
 const anonymizeButton = document.getElementById("anonymizeButton");
 const saveMaskedButton = document.getElementById("saveMaskedButton");
 const rulesContainer = document.getElementById("rulesContainer");
@@ -51,6 +54,7 @@ let transactions = [];
 let anonymizedActive = false;
 let anonymizedCache = [];
 let lastAnonymizationWarnings = [];
+let transactionImports = [];
 let displaySettings = loadDisplaySettings();
 let appInitialized = false;
 let currentHeaders = null;
@@ -87,6 +91,9 @@ const ensuredSaveMappingButton = assertElement(saveMappingButton, "Mapping speic
 const ensuredImportButton = assertElement(importButton, "Import Button fehlt");
 const ensuredStatusArea = assertElement(statusArea, "Statusbereich fehlt");
 const ensuredTableBody = assertElement(tableBody, "Tabellenkörper fehlt");
+const ensuredTransactionImportsTableWrapper = assertElement(transactionImportsTableWrapper, "Importübersicht Tabelle fehlt");
+const ensuredTransactionImportsBody = assertElement(transactionImportsBody, "Importübersicht Tabellenkörper fehlt");
+const ensuredTransactionImportsEmptyState = assertElement(transactionImportsEmptyState, "Importübersicht Platzhalter fehlt");
 const ensuredAnonymizeButton = assertElement(anonymizeButton, "Anonymisieren Button fehlt");
 const ensuredSaveMaskedButton = assertElement(saveMaskedButton, "Speichern Button fehlt");
 const ensuredRulesContainer = assertElement(rulesContainer, "Regel-Container fehlt");
@@ -207,6 +214,7 @@ function handleLogout() {
     transactions = [];
     detectedHeader = null;
     renderTransactions([]);
+    renderTransactionImports();
     ensuredAnonymizeButton.textContent = "Anonymisieren";
     ensuredSaveMaskedButton.disabled = true;
     displaySettings = loadDisplaySettings();
@@ -316,6 +324,8 @@ function handleAuthenticated(message) {
         hydrateRulesFromStorage();
     }
     refreshBankNameOptions();
+    renderTransactionImports();
+    void refreshTransactionImports();
     showMain();
     if (message) {
         setStatus(message, "info");
@@ -372,6 +382,90 @@ function resetAnonymizationState() {
     lastAnonymizationWarnings = [];
     ensuredAnonymizeButton.textContent = "Anonymisieren";
     ensuredSaveMaskedButton.disabled = true;
+}
+function formatImportDate(value) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+    const parsed = Date.parse(trimmed);
+    if (Number.isNaN(parsed)) {
+        return trimmed;
+    }
+    return new Date(parsed).toLocaleDateString("de-DE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
+}
+function formatImportTimestamp(value) {
+    if (!value) {
+        return "";
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+    const parsed = Date.parse(trimmed);
+    if (Number.isNaN(parsed)) {
+        return trimmed;
+    }
+    return new Date(parsed).toLocaleString("de-DE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+function renderTransactionImports() {
+    transactionImports = loadTransactionImports();
+    const hasEntries = transactionImports.length > 0;
+    ensuredTransactionImportsEmptyState.hidden = hasEntries;
+    ensuredTransactionImportsEmptyState.setAttribute("aria-hidden", hasEntries ? "true" : "false");
+    ensuredTransactionImportsTableWrapper.hidden = !hasEntries;
+    ensuredTransactionImportsTableWrapper.setAttribute("aria-hidden", hasEntries ? "false" : "true");
+    if (!hasEntries) {
+        ensuredTransactionImportsBody.replaceChildren();
+        return;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const entry of transactionImports) {
+        const row = document.createElement("tr");
+        const bankCell = document.createElement("td");
+        bankCell.textContent = entry.bank_name || "–";
+        row.append(bankCell);
+        const accountCell = document.createElement("td");
+        accountCell.textContent = entry.booking_account || "–";
+        row.append(accountCell);
+        const createdCell = document.createElement("td");
+        createdCell.textContent = formatImportTimestamp(entry.created_on);
+        row.append(createdCell);
+        const firstCell = document.createElement("td");
+        firstCell.textContent = formatImportDate(entry.first_booking_date);
+        row.append(firstCell);
+        const lastCell = document.createElement("td");
+        lastCell.textContent = formatImportDate(entry.last_booking_date);
+        row.append(lastCell);
+        fragment.append(row);
+    }
+    ensuredTransactionImportsBody.replaceChildren(fragment);
+}
+async function refreshTransactionImports(options = {}) {
+    const { showError = false } = options;
+    try {
+        await fetchTransactionImportsFromBackend();
+        renderTransactionImports();
+        return true;
+    }
+    catch (error) {
+        console.error("fetchTransactionImportsFromBackend failed", error);
+        renderTransactionImports();
+        if (showError) {
+            setStatus("Importübersicht konnte nicht aktualisiert werden.", "warning");
+        }
+        return false;
+    }
 }
 function renderTransactions(view) {
     const isPrimaryView = view === transactions;
@@ -876,7 +970,10 @@ async function handleSaveMaskedCopy() {
     try {
         await saveMaskedTransactions(anonymizedCache);
         await persistMaskedTransactions();
-        setStatus("Anonymisierte Kopie an Postgres übertragen.", "info");
+        const refreshed = await refreshTransactionImports({ showError: true });
+        if (refreshed) {
+            setStatus("Anonymisierte Kopie an Postgres übertragen.", "info");
+        }
     }
     catch (error) {
         console.error("persistMaskedTransactions failed", error);

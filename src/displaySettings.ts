@@ -1,8 +1,8 @@
 import { formatDateWithFormat } from "./dateFormat.js";
 import { DisplaySettings, UnifiedTx } from "./types.js";
 
-export const DEFAULT_DATE_DISPLAY_FORMAT = "dd.MM.yyyy HH:mm";
-export const DEFAULT_AMOUNT_DISPLAY_FORMAT = "#,##0.00";
+export const DEFAULT_DATE_DISPLAY_FORMAT = "dd.MM.yyyy";
+export const DEFAULT_AMOUNT_DISPLAY_FORMAT = "#.##0,00";
 
 export function sanitizeDisplaySettings(
   value: Partial<DisplaySettings> | null | undefined

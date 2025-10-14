@@ -190,6 +190,51 @@ select[multiple] {
   font-style: italic;
 }
 
+.import-summary {
+  margin-top: 1.25rem;
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 1rem 1.25rem;
+}
+
+.import-summary-empty {
+  margin: 0;
+  color: #4a5568;
+  font-style: italic;
+}
+
+.import-summary-table-wrapper {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.import-summary-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.import-summary-table th,
+.import-summary-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e3e8ef;
+  white-space: nowrap;
+}
+
+.import-summary-table th {
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: #4a5568;
+}
+
+.import-summary-table tbody tr:nth-child(odd) {
+  background: #f1f5f9;
+}
+
 .mapping-summary-table {
   width: 100%;
   border-collapse: collapse;
@@ -228,6 +273,18 @@ select[multiple] {
 
 .button-row.align-right {
   justify-content: flex-end;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .rules-info {
@@ -549,6 +606,23 @@ tbody tr:nth-child(odd) {
   .rule-card {
     background: #1f2937;
     border-color: #2d3a5c;
+  }
+
+  .import-summary {
+    background: #1f2937;
+    border-color: #2d3a5c;
+  }
+
+  .import-summary-empty {
+    color: #b0bec5;
+  }
+
+  .import-summary-table th {
+    color: #cbd5f5;
+  }
+
+  .import-summary-table tbody tr:nth-child(odd) {
+    background: #1b2533;
   }
 
   .rule-card-body {

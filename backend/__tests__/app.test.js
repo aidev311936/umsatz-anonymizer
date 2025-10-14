@@ -48,6 +48,7 @@ test("auth cookie switches to cross-site policy when remote origins are configur
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -94,6 +95,7 @@ test("auth cookie honours explicit SameSite/Secure overrides", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -128,6 +130,7 @@ test("POST /auth/token issues a new token", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -158,6 +161,7 @@ test("GET /settings requires authentication", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -165,6 +169,96 @@ test("GET /settings requires authentication", async () => {
 
   const app = createApp({ db });
   await request(app).get("/settings").expect(401);
+});
+
+test("GET /transactions/imports requires authentication", async () => {
+  const db = {
+    createToken: async () => ({}),
+    touchToken: async () => null,
+    tokenExists: async () => false,
+    getSettings: async () => ({}),
+    updateSettings: async () => ({}),
+    listTransactions: async () => [],
+    replaceTransactions: async () => undefined,
+    readMaskedTransactions: async () => [],
+    replaceMaskedTransactions: async () => undefined,
+    listBankMappings: async () => [],
+    listTransactionImports: async () => [],
+    upsertBankMapping: async () => undefined,
+    clearBankMappings: async () => undefined,
+    clearTransactions: async () => undefined,
+  };
+
+  const app = createApp({ db });
+  await request(app).get("/transactions/imports").expect(401);
+});
+
+test("GET /transactions/imports returns normalized import summaries", async () => {
+  const listTransactionImports = createSpy(async () => [
+    {
+      bank_name: "Bank A",
+      booking_account: null,
+      created_on: new Date("2024-02-10T10:00:00Z"),
+      first_booking_date: "2024-02-01",
+      last_booking_date: "2024-02-05",
+    },
+    {
+      bank_name: "Bank B",
+      booking_account: "Konto 1",
+      created_on: "2024-02-11T08:30:00Z",
+      first_booking_date: "2024-02-02",
+      last_booking_date: "2024-02-06",
+    },
+  ]);
+
+  const db = {
+    createToken: async () => ({}),
+    touchToken: async () => ({
+      token: "test",
+      created_on: "2024-01-01T00:00:00.000Z",
+      accessed_on: "2024-01-01T00:00:00.000Z",
+    }),
+    tokenExists: async (token) => token === "test",
+    getSettings: async () => ({}),
+    updateSettings: async () => ({}),
+    listTransactions: async () => [],
+    replaceTransactions: async () => undefined,
+    readMaskedTransactions: async () => [],
+    replaceMaskedTransactions: async () => undefined,
+    listBankMappings: async () => [],
+    listTransactionImports,
+    upsertBankMapping: async () => undefined,
+    clearBankMappings: async () => undefined,
+    clearTransactions: async () => undefined,
+  };
+
+  const app = createApp({ db });
+
+  const response = await request(app)
+    .get("/transactions/imports")
+    .set("Cookie", "umsatz_token=test")
+    .expect(200);
+
+  assert.equal(listTransactionImports.calls.length, 1);
+  assert.deepEqual(listTransactionImports.calls[0], ["test"]);
+  assert.deepEqual(response.body, {
+    imports: [
+      {
+        bank_name: "Bank A",
+        booking_account: "",
+        created_on: "2024-02-10T10:00:00.000Z",
+        first_booking_date: "2024-02-01",
+        last_booking_date: "2024-02-05",
+      },
+      {
+        bank_name: "Bank B",
+        booking_account: "Konto 1",
+        created_on: "2024-02-11T08:30:00.000Z",
+        first_booking_date: "2024-02-02",
+        last_booking_date: "2024-02-06",
+      },
+    ],
+  });
 });
 
 test("POST /transactions validates payload", async () => {
@@ -184,6 +278,7 @@ test("POST /transactions validates payload", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -232,6 +327,7 @@ test("POST /transactions stores sanitized entries", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -280,6 +376,7 @@ test("POST /transactions/masked stores booking hash", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
@@ -330,6 +427,7 @@ test("routes are reachable under configured API base path", async () => {
     readMaskedTransactions: async () => [],
     replaceMaskedTransactions: async () => undefined,
     listBankMappings: async () => [],
+    listTransactionImports: async () => [],
     upsertBankMapping: async () => undefined,
     clearBankMappings: async () => undefined,
     clearTransactions: async () => undefined,
