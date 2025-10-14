@@ -37,31 +37,73 @@
           <label for="csvInput">CSV wählen</label>
           <input id="csvInput" type="file" accept=".csv,text/csv" />
           <label for="bankName">Bankname</label>
-          <input id="bankName" type="text" placeholder="z. B. comdirect" />
+          <input
+            id="bankName"
+            type="text"
+            list="bankNameOptions"
+            placeholder="z. B. comdirect"
+            autocomplete="off"
+          />
+          <datalist id="bankNameOptions"></datalist>
           <label for="bookingAccount">Buchungskonto</label>
           <input
             id="bookingAccount"
             type="text"
             placeholder="z. B. Girokonto"
           />
+          <div id="transactionImportsContainer" class="import-summary" aria-live="polite">
+            <p id="transactionImportsEmpty" class="import-summary-empty" role="status">
+              Noch wurden keine anonymisierten Buchungen an den Server übertragen.
+            </p>
+            <div
+              id="transactionImportsTableWrapper"
+              class="import-summary-table-wrapper"
+              role="region"
+              aria-live="polite"
+              aria-label="Bisherige anonymisierte Importe"
+              hidden
+            >
+              <table class="import-summary-table">
+                <caption class="sr-only">Bisherige anonymisierte Importe</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Bank</th>
+                    <th scope="col">Buchungskonto</th>
+                    <th scope="col">Importiert am</th>
+                    <th scope="col">Erste Buchung</th>
+                    <th scope="col">Letzte Buchung</th>
+                  </tr>
+                </thead>
+                <tbody id="transactionImportsBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </details>
 
-      <details class="collapsible-section" open>
+      <details class="collapsible-section">
         <summary>
           <h2>Mapping auf Zielschema</h2>
         </summary>
         <div class="collapsible-content">
-          <div id="mappingContainer"></div>
+          <div id="mappingSummary" class="mapping-summary" aria-live="polite">
+            <p class="mapping-summary-empty">
+              Bitte Bankname wählen und Mapping importieren oder erstellen.
+            </p>
+          </div>
+          <div id="mappingFormWrapper" hidden>
+            <div id="mappingContainer"></div>
+          </div>
           <div class="button-row">
-            <button id="saveMappingButton" type="button">Mapping speichern</button>
+            <button id="createMappingButton" type="button">Mapping erstellen</button>
+            <button id="saveMappingButton" type="button" disabled>Mapping speichern</button>
             <button id="importButton" type="button">Import starten</button>
           </div>
           <div id="statusArea" data-status="info"></div>
         </div>
       </details>
 
-      <details class="collapsible-section" open>
+      <details class="collapsible-section">
         <summary>
           <h2>Anzeigeeinstellungen</h2>
         </summary>
@@ -70,10 +112,14 @@
           <input
             id="dateDisplayFormat"
             type="text"
-            placeholder="z. B. dd.MM.yyyy HH:mm"
+            placeholder="z. B. dd.MM.yyyy"
           />
           <label for="amountDisplayFormat">Betragsformat (Anzeige)</label>
-          <input id="amountDisplayFormat" type="text" placeholder="z. B. #,##0.00" />
+          <input
+            id="amountDisplayFormat"
+            type="text"
+            placeholder="z. B. #.##0,00"
+          />
           <div class="button-row">
             <button id="applyDisplaySettingsButton" type="button">
               Anzeige aktualisieren
@@ -82,7 +128,7 @@
         </div>
       </details>
 
-      <details class="collapsible-section" open>
+      <details class="collapsible-section">
         <summary>
           <h2>Anonymisierungsregeln</h2>
         </summary>

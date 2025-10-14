@@ -1,5 +1,11 @@
 import { sanitizeDisplaySettings } from "./displaySettings.js";
-import { AnonRule, BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
+import {
+  AnonRule,
+  BankMapping,
+  DisplaySettings,
+  TransactionImportSummary,
+  UnifiedTx,
+} from "./types.js";
 import { computeUnifiedTxHash } from "./transactionHash.js";
 import {
   addRawTransactionIfMissing,
@@ -91,6 +97,7 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 const BANK_MAPPINGS_KEY = "bank_mappings_v1";
+const LOCAL_BANK_MAPPINGS_KEY = "bank_mappings_local_v1";
 const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
@@ -98,10 +105,13 @@ const DISPLAY_SETTINGS_KEY = "display_settings_v1";
 const CURRENT_RULE_VERSION = 2;
 
 const bankMappingsCache: BankMapping[] = [];
+let remoteBankMappings: BankMapping[] = [];
+let localBankMappings: BankMapping[] = [];
 let transactionsCache: UnifiedTx[] = [];
 let maskedTransactionsCache: UnifiedTx[] = [];
 let displaySettingsCache: DisplaySettings = sanitizeDisplaySettings(null);
 let settingsCache: Record<string, unknown> = {};
+let transactionImportsCache: TransactionImportSummary[] = [];
 let initialized = false;
 let initializationPromise: Promise<void> | null = null;
 
@@ -124,8 +134,9 @@ export async function initializeStorage(): Promise<void> {
       } else {
         displaySettingsCache = sanitizeDisplaySettings(null);
       }
-      bankMappingsCache.length = 0;
-      bankMappingsCache.push(...mappings);
+      remoteBankMappings = [...mappings];
+      localBankMappings = loadLocalBankMappings();
+      setBankMappingsCacheFromSources();
       updateTransactionsCache(indexedDbSnapshot.rawTransactions);
       const maskedSource =
         masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
@@ -204,6 +215,123 @@ function safeParse<T>(text: string | null): T | null {
   }
 }
 
+function mergeBankMappings(
+  primary: BankMapping[],
+  overrides: BankMapping[],
+): BankMapping[] {
+  const map = new Map<string, BankMapping>();
+  const normalize = (name: string) => name.trim().toLowerCase();
+  primary.forEach((entry) => {
+    const normalized = normalize(entry.bank_name);
+    if (normalized.length > 0 && !map.has(normalized)) {
+      map.set(normalized, sanitizeBankMapping(entry));
+    }
+  });
+  overrides.forEach((entry) => {
+    const normalized = normalize(entry.bank_name);
+    if (normalized.length > 0) {
+      map.set(normalized, sanitizeBankMapping(entry));
+    }
+  });
+  return Array.from(map.values()).sort((a, b) =>
+    a.bank_name.localeCompare(b.bank_name, "de", { sensitivity: "base" }),
+  );
+}
+
+function setBankMappingsCacheFromSources(): void {
+  const combined = mergeBankMappings(remoteBankMappings, localBankMappings);
+  bankMappingsCache.length = 0;
+  bankMappingsCache.push(...combined);
+}
+
+function loadLocalBankMappings(): BankMapping[] {
+  const parsed = safeParse<unknown>(localStorage.getItem(LOCAL_BANK_MAPPINGS_KEY));
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed
+    .map(toBankMapping)
+    .filter((entry): entry is BankMapping => entry !== null)
+    .map(sanitizeBankMapping);
+}
+
+function persistLocalBankMappings(mappings: BankMapping[]): void {
+  const sanitized = mappings.map(sanitizeBankMapping);
+  if (sanitized.length === 0) {
+    localStorage.removeItem(LOCAL_BANK_MAPPINGS_KEY);
+    return;
+  }
+  localStorage.setItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+}
+
+function toTransactionImportSummary(value: unknown): TransactionImportSummary | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const maybe = value as {
+    bank_name?: unknown;
+    booking_account?: unknown;
+    created_on?: unknown;
+    first_booking_date?: unknown;
+    last_booking_date?: unknown;
+  };
+
+  if (typeof maybe.bank_name !== "string") {
+    return null;
+  }
+
+  const bookingAccount =
+    typeof maybe.booking_account === "string" ? maybe.booking_account : "";
+
+  let createdOn: string | null = null;
+  if (typeof maybe.created_on === "string") {
+    createdOn = maybe.created_on;
+  } else if (maybe.created_on instanceof Date) {
+    createdOn = maybe.created_on.toISOString();
+  } else if (maybe.created_on === null) {
+    createdOn = null;
+  }
+
+  const first =
+    typeof maybe.first_booking_date === "string" ? maybe.first_booking_date : "";
+  const last =
+    typeof maybe.last_booking_date === "string" ? maybe.last_booking_date : "";
+
+  return {
+    bank_name: maybe.bank_name,
+    booking_account: bookingAccount,
+    created_on: createdOn,
+    first_booking_date: first,
+    last_booking_date: last,
+  };
+}
+
+function sanitizeTransactionImportSummary(
+  summary: TransactionImportSummary,
+): TransactionImportSummary {
+  const bankName = summary.bank_name.trim();
+  const bookingAccount = summary.booking_account.trim();
+  const first = summary.first_booking_date ? summary.first_booking_date.trim() : "";
+  const last = summary.last_booking_date ? summary.last_booking_date.trim() : "";
+
+  let created: string | null = null;
+  if (typeof summary.created_on === "string") {
+    const parsed = Date.parse(summary.created_on);
+    created = Number.isNaN(parsed)
+      ? summary.created_on.trim()
+      : new Date(parsed).toISOString();
+  }
+
+  return {
+    bank_name: bankName,
+    booking_account: bookingAccount,
+    created_on: created,
+    first_booking_date: first,
+    last_booking_date: last,
+  };
+}
+
 async function fetchBankMappingsFromBackend(): Promise<BankMapping[]> {
   const response = await apiRequest("/bank-mapping");
   const payload = await readJson<{ mappings?: unknown }>(response);
@@ -220,8 +348,23 @@ async function fetchSettingsFromBackend(): Promise<Record<string, unknown>> {
   return payload.settings ?? {};
 }
 
+export async function fetchTransactionImportsFromBackend(): Promise<TransactionImportSummary[]> {
+  const response = await apiRequest("/transactions/imports");
+  const payload = await readJson<{ imports?: unknown }>(response);
+  const entries = Array.isArray(payload.imports) ? payload.imports : [];
+  transactionImportsCache = entries
+    .map(toTransactionImportSummary)
+    .filter((entry): entry is TransactionImportSummary => entry !== null)
+    .map(sanitizeTransactionImportSummary);
+  return transactionImportsCache.map((entry) => ({ ...entry }));
+}
+
 export function loadBankMappings(): BankMapping[] {
   return bankMappingsCache.map(sanitizeBankMapping);
+}
+
+export function loadTransactionImports(): TransactionImportSummary[] {
+  return transactionImportsCache.map((entry) => ({ ...entry }));
 }
 
 export function importBankMappings(raw: unknown): BankMapping[] | null {
@@ -232,38 +375,25 @@ export function importBankMappings(raw: unknown): BankMapping[] | null {
     .map(toBankMapping)
     .filter((entry): entry is BankMapping => entry !== null)
     .map(sanitizeBankMapping);
-  bankMappingsCache.length = 0;
-  bankMappingsCache.push(...sanitized);
-  fireAndForget(
-    Promise.all(
-      sanitized.map((entry) =>
-        apiRequest("/bank-mapping", {
-          method: "POST",
-          body: JSON.stringify(entry),
-        }),
-      ),
-    ),
-    "importBankMappings",
-  );
+  localBankMappings = [...sanitized];
+  persistLocalBankMappings(localBankMappings);
+  setBankMappingsCacheFromSources();
   return sanitized;
 }
 
 export function saveBankMapping(mapping: BankMapping): void {
   const sanitized = sanitizeBankMapping(mapping);
-  const existing = loadBankMappings();
-  const index = existing.findIndex((entry) => entry.bank_name === sanitized.bank_name);
-  if (index >= 0) {
-    bankMappingsCache[index] = sanitized;
-  } else {
-    bankMappingsCache.push(sanitized);
-  }
-  fireAndForget(
-    apiRequest("/bank-mapping", {
-      method: "POST",
-      body: JSON.stringify(sanitized),
-    }),
-    "saveBankMapping",
+  const normalized = sanitized.bank_name.trim().toLowerCase();
+  const index = localBankMappings.findIndex(
+    (entry) => entry.bank_name.trim().toLowerCase() === normalized,
   );
+  if (index >= 0) {
+    localBankMappings[index] = sanitized;
+  } else {
+    localBankMappings.push(sanitized);
+  }
+  persistLocalBankMappings(localBankMappings);
+  setBankMappingsCacheFromSources();
 }
 
 export function loadDisplaySettings(): DisplaySettings {
@@ -616,8 +746,11 @@ export function clearPersistentData(): void {
   transactionsCache = [];
   maskedTransactionsCache = [];
   bankMappingsCache.length = 0;
+  remoteBankMappings = [];
+  localBankMappings = [];
   displaySettingsCache = sanitizeDisplaySettings(null);
   settingsCache = {};
+  transactionImportsCache = [];
   initialized = false;
   initializationPromise = null;
   fireAndForget(
@@ -629,6 +762,7 @@ export function clearPersistentData(): void {
   fireAndForget(clearAllIndexedDbData(), "clearIndexedDbStorage");
   const keys = [
     BANK_MAPPINGS_KEY,
+    LOCAL_BANK_MAPPINGS_KEY,
     TRANSACTIONS_KEY,
     TRANSACTIONS_MASKED_KEY,
     ANON_RULES_KEY,
