@@ -392,7 +392,11 @@ function formatImportDate(value) {
     if (Number.isNaN(parsed)) {
         return trimmed;
     }
-    return new Date(parsed).toLocaleDateString("de-DE");
+    return new Date(parsed).toLocaleDateString("de-DE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
 }
 function formatImportTimestamp(value) {
     if (!value) {

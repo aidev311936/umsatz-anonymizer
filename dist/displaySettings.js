@@ -1,6 +1,6 @@
 import { formatDateWithFormat } from "./dateFormat.js";
-export const DEFAULT_DATE_DISPLAY_FORMAT = "dd.MM.yyyy HH:mm";
-export const DEFAULT_AMOUNT_DISPLAY_FORMAT = "#,##0.00";
+export const DEFAULT_DATE_DISPLAY_FORMAT = "dd.MM.yyyy";
+export const DEFAULT_AMOUNT_DISPLAY_FORMAT = "#.##0,00";
 export function sanitizeDisplaySettings(value) {
     const rawDate = typeof value?.booking_date_display_format === "string"
         ? value.booking_date_display_format
