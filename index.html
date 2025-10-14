@@ -37,7 +37,14 @@
           <label for="csvInput">CSV wählen</label>
           <input id="csvInput" type="file" accept=".csv,text/csv" />
           <label for="bankName">Bankname</label>
-          <input id="bankName" type="text" placeholder="z. B. comdirect" />
+          <input
+            id="bankName"
+            type="text"
+            list="bankNameOptions"
+            placeholder="z. B. comdirect"
+            autocomplete="off"
+          />
+          <datalist id="bankNameOptions"></datalist>
           <label for="bookingAccount">Buchungskonto</label>
           <input
             id="bookingAccount"
@@ -52,9 +59,17 @@
           <h2>Mapping auf Zielschema</h2>
         </summary>
         <div class="collapsible-content">
-          <div id="mappingContainer"></div>
+          <div id="mappingSummary" class="mapping-summary" aria-live="polite">
+            <p class="mapping-summary-empty">
+              Bitte Bankname wählen und Mapping importieren oder erstellen.
+            </p>
+          </div>
+          <div id="mappingFormWrapper" hidden>
+            <div id="mappingContainer"></div>
+          </div>
           <div class="button-row">
-            <button id="saveMappingButton" type="button">Mapping speichern</button>
+            <button id="createMappingButton" type="button">Mapping erstellen</button>
+            <button id="saveMappingButton" type="button" disabled>Mapping speichern</button>
             <button id="importButton" type="button">Import starten</button>
           </div>
           <div id="statusArea" data-status="info"></div>

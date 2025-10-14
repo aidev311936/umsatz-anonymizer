@@ -60,12 +60,15 @@ async function readJson(response) {
     return JSON.parse(text);
 }
 const BANK_MAPPINGS_KEY = "bank_mappings_v1";
+const LOCAL_BANK_MAPPINGS_KEY = "bank_mappings_local_v1";
 const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
 const DISPLAY_SETTINGS_KEY = "display_settings_v1";
 const CURRENT_RULE_VERSION = 2;
 const bankMappingsCache = [];
+let remoteBankMappings = [];
+let localBankMappings = [];
 let transactionsCache = [];
 let maskedTransactionsCache = [];
 let displaySettingsCache = sanitizeDisplaySettings(null);
@@ -92,8 +95,9 @@ export async function initializeStorage() {
             else {
                 displaySettingsCache = sanitizeDisplaySettings(null);
             }
-            bankMappingsCache.length = 0;
-            bankMappingsCache.push(...mappings);
+            remoteBankMappings = [...mappings];
+            localBankMappings = loadLocalBankMappings();
+            setBankMappingsCacheFromSources();
             updateTransactionsCache(indexedDbSnapshot.rawTransactions);
             const maskedSource = masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
             const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
@@ -156,6 +160,46 @@ function safeParse(text) {
         return null;
     }
 }
+function mergeBankMappings(primary, overrides) {
+    const map = new Map();
+    const normalize = (name) => name.trim().toLowerCase();
+    primary.forEach((entry) => {
+        const normalized = normalize(entry.bank_name);
+        if (normalized.length > 0 && !map.has(normalized)) {
+            map.set(normalized, sanitizeBankMapping(entry));
+        }
+    });
+    overrides.forEach((entry) => {
+        const normalized = normalize(entry.bank_name);
+        if (normalized.length > 0) {
+            map.set(normalized, sanitizeBankMapping(entry));
+        }
+    });
+    return Array.from(map.values()).sort((a, b) => a.bank_name.localeCompare(b.bank_name, "de", { sensitivity: "base" }));
+}
+function setBankMappingsCacheFromSources() {
+    const combined = mergeBankMappings(remoteBankMappings, localBankMappings);
+    bankMappingsCache.length = 0;
+    bankMappingsCache.push(...combined);
+}
+function loadLocalBankMappings() {
+    const parsed = safeParse(localStorage.getItem(LOCAL_BANK_MAPPINGS_KEY));
+    if (!Array.isArray(parsed)) {
+        return [];
+    }
+    return parsed
+        .map(toBankMapping)
+        .filter((entry) => entry !== null)
+        .map(sanitizeBankMapping);
+}
+function persistLocalBankMappings(mappings) {
+    const sanitized = mappings.map(sanitizeBankMapping);
+    if (sanitized.length === 0) {
+        localStorage.removeItem(LOCAL_BANK_MAPPINGS_KEY);
+        return;
+    }
+    localStorage.setItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+}
 async function fetchBankMappingsFromBackend() {
     const response = await apiRequest("/bank-mapping");
     const payload = await readJson(response);
@@ -181,28 +225,23 @@ export function importBankMappings(raw) {
         .map(toBankMapping)
         .filter((entry) => entry !== null)
         .map(sanitizeBankMapping);
-    bankMappingsCache.length = 0;
-    bankMappingsCache.push(...sanitized);
-    fireAndForget(Promise.all(sanitized.map((entry) => apiRequest("/bank-mapping", {
-        method: "POST",
-        body: JSON.stringify(entry),
-    }))), "importBankMappings");
+    localBankMappings = [...sanitized];
+    persistLocalBankMappings(localBankMappings);
+    setBankMappingsCacheFromSources();
     return sanitized;
 }
 export function saveBankMapping(mapping) {
     const sanitized = sanitizeBankMapping(mapping);
-    const existing = loadBankMappings();
-    const index = existing.findIndex((entry) => entry.bank_name === sanitized.bank_name);
+    const normalized = sanitized.bank_name.trim().toLowerCase();
+    const index = localBankMappings.findIndex((entry) => entry.bank_name.trim().toLowerCase() === normalized);
     if (index >= 0) {
-        bankMappingsCache[index] = sanitized;
+        localBankMappings[index] = sanitized;
     }
     else {
-        bankMappingsCache.push(sanitized);
+        localBankMappings.push(sanitized);
     }
-    fireAndForget(apiRequest("/bank-mapping", {
-        method: "POST",
-        body: JSON.stringify(sanitized),
-    }), "saveBankMapping");
+    persistLocalBankMappings(localBankMappings);
+    setBankMappingsCacheFromSources();
 }
 export function loadDisplaySettings() {
     return sanitizeDisplaySettings(displaySettingsCache);
@@ -486,6 +525,8 @@ export function clearPersistentData() {
     transactionsCache = [];
     maskedTransactionsCache = [];
     bankMappingsCache.length = 0;
+    remoteBankMappings = [];
+    localBankMappings = [];
     displaySettingsCache = sanitizeDisplaySettings(null);
     settingsCache = {};
     initialized = false;
@@ -496,6 +537,7 @@ export function clearPersistentData() {
     fireAndForget(clearAllIndexedDbData(), "clearIndexedDbStorage");
     const keys = [
         BANK_MAPPINGS_KEY,
+        LOCAL_BANK_MAPPINGS_KEY,
         TRANSACTIONS_KEY,
         TRANSACTIONS_MASKED_KEY,
         ANON_RULES_KEY,

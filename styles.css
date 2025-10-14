@@ -171,6 +171,54 @@ select[multiple] {
   gap: 1.25rem;
 }
 
+.mapping-summary {
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  background: #f8fafc;
+  margin-bottom: 1.25rem;
+}
+
+.mapping-summary-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.mapping-summary-empty {
+  margin: 0;
+  color: #555;
+  font-style: italic;
+}
+
+.mapping-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.mapping-summary-table th,
+.mapping-summary-table td {
+  text-align: left;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e3e8ef;
+}
+
+.mapping-summary-table td {
+  color: #333;
+}
+
+.mapping-summary-table tr:last-of-type th,
+.mapping-summary-table tr:last-of-type td {
+  border-bottom: none;
+}
+
+.mapping-summary-table .mapping-summary-format th,
+.mapping-summary-table .mapping-summary-format td {
+  border-top: 2px solid #d0d7e5;
+  padding-top: 0.75rem;
+  border-bottom: none;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;

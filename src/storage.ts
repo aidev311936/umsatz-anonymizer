@@ -91,6 +91,7 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 const BANK_MAPPINGS_KEY = "bank_mappings_v1";
+const LOCAL_BANK_MAPPINGS_KEY = "bank_mappings_local_v1";
 const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
@@ -98,6 +99,8 @@ const DISPLAY_SETTINGS_KEY = "display_settings_v1";
 const CURRENT_RULE_VERSION = 2;
 
 const bankMappingsCache: BankMapping[] = [];
+let remoteBankMappings: BankMapping[] = [];
+let localBankMappings: BankMapping[] = [];
 let transactionsCache: UnifiedTx[] = [];
 let maskedTransactionsCache: UnifiedTx[] = [];
 let displaySettingsCache: DisplaySettings = sanitizeDisplaySettings(null);
@@ -124,8 +127,9 @@ export async function initializeStorage(): Promise<void> {
       } else {
         displaySettingsCache = sanitizeDisplaySettings(null);
       }
-      bankMappingsCache.length = 0;
-      bankMappingsCache.push(...mappings);
+      remoteBankMappings = [...mappings];
+      localBankMappings = loadLocalBankMappings();
+      setBankMappingsCacheFromSources();
       updateTransactionsCache(indexedDbSnapshot.rawTransactions);
       const maskedSource =
         masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
@@ -204,6 +208,55 @@ function safeParse<T>(text: string | null): T | null {
   }
 }
 
+function mergeBankMappings(
+  primary: BankMapping[],
+  overrides: BankMapping[],
+): BankMapping[] {
+  const map = new Map<string, BankMapping>();
+  const normalize = (name: string) => name.trim().toLowerCase();
+  primary.forEach((entry) => {
+    const normalized = normalize(entry.bank_name);
+    if (normalized.length > 0 && !map.has(normalized)) {
+      map.set(normalized, sanitizeBankMapping(entry));
+    }
+  });
+  overrides.forEach((entry) => {
+    const normalized = normalize(entry.bank_name);
+    if (normalized.length > 0) {
+      map.set(normalized, sanitizeBankMapping(entry));
+    }
+  });
+  return Array.from(map.values()).sort((a, b) =>
+    a.bank_name.localeCompare(b.bank_name, "de", { sensitivity: "base" }),
+  );
+}
+
+function setBankMappingsCacheFromSources(): void {
+  const combined = mergeBankMappings(remoteBankMappings, localBankMappings);
+  bankMappingsCache.length = 0;
+  bankMappingsCache.push(...combined);
+}
+
+function loadLocalBankMappings(): BankMapping[] {
+  const parsed = safeParse<unknown>(localStorage.getItem(LOCAL_BANK_MAPPINGS_KEY));
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed
+    .map(toBankMapping)
+    .filter((entry): entry is BankMapping => entry !== null)
+    .map(sanitizeBankMapping);
+}
+
+function persistLocalBankMappings(mappings: BankMapping[]): void {
+  const sanitized = mappings.map(sanitizeBankMapping);
+  if (sanitized.length === 0) {
+    localStorage.removeItem(LOCAL_BANK_MAPPINGS_KEY);
+    return;
+  }
+  localStorage.setItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+}
+
 async function fetchBankMappingsFromBackend(): Promise<BankMapping[]> {
   const response = await apiRequest("/bank-mapping");
   const payload = await readJson<{ mappings?: unknown }>(response);
@@ -232,38 +285,25 @@ export function importBankMappings(raw: unknown): BankMapping[] | null {
     .map(toBankMapping)
     .filter((entry): entry is BankMapping => entry !== null)
     .map(sanitizeBankMapping);
-  bankMappingsCache.length = 0;
-  bankMappingsCache.push(...sanitized);
-  fireAndForget(
-    Promise.all(
-      sanitized.map((entry) =>
-        apiRequest("/bank-mapping", {
-          method: "POST",
-          body: JSON.stringify(entry),
-        }),
-      ),
-    ),
-    "importBankMappings",
-  );
+  localBankMappings = [...sanitized];
+  persistLocalBankMappings(localBankMappings);
+  setBankMappingsCacheFromSources();
   return sanitized;
 }
 
 export function saveBankMapping(mapping: BankMapping): void {
   const sanitized = sanitizeBankMapping(mapping);
-  const existing = loadBankMappings();
-  const index = existing.findIndex((entry) => entry.bank_name === sanitized.bank_name);
-  if (index >= 0) {
-    bankMappingsCache[index] = sanitized;
-  } else {
-    bankMappingsCache.push(sanitized);
-  }
-  fireAndForget(
-    apiRequest("/bank-mapping", {
-      method: "POST",
-      body: JSON.stringify(sanitized),
-    }),
-    "saveBankMapping",
+  const normalized = sanitized.bank_name.trim().toLowerCase();
+  const index = localBankMappings.findIndex(
+    (entry) => entry.bank_name.trim().toLowerCase() === normalized,
   );
+  if (index >= 0) {
+    localBankMappings[index] = sanitized;
+  } else {
+    localBankMappings.push(sanitized);
+  }
+  persistLocalBankMappings(localBankMappings);
+  setBankMappingsCacheFromSources();
 }
 
 export function loadDisplaySettings(): DisplaySettings {
@@ -616,6 +656,8 @@ export function clearPersistentData(): void {
   transactionsCache = [];
   maskedTransactionsCache = [];
   bankMappingsCache.length = 0;
+  remoteBankMappings = [];
+  localBankMappings = [];
   displaySettingsCache = sanitizeDisplaySettings(null);
   settingsCache = {};
   initialized = false;
@@ -629,6 +671,7 @@ export function clearPersistentData(): void {
   fireAndForget(clearAllIndexedDbData(), "clearIndexedDbStorage");
   const keys = [
     BANK_MAPPINGS_KEY,
+    LOCAL_BANK_MAPPINGS_KEY,
     TRANSACTIONS_KEY,
     TRANSACTIONS_MASKED_KEY,
     ANON_RULES_KEY,

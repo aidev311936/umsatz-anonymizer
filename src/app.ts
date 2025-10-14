@@ -51,10 +51,18 @@ const logoutButton = document.getElementById("logoutButton") as HTMLButtonElemen
 
 const fileInput = document.getElementById("csvInput") as HTMLInputElement | null;
 const bankNameInput = document.getElementById("bankName") as HTMLInputElement | null;
+const bankNameOptions = document.getElementById(
+  "bankNameOptions",
+) as HTMLDataListElement | null;
 const bookingAccountInput = document.getElementById(
   "bookingAccount",
 ) as HTMLInputElement | null;
+const mappingSummary = document.getElementById("mappingSummary");
+const mappingFormWrapper = document.getElementById("mappingFormWrapper");
 const mappingContainer = document.getElementById("mappingContainer");
+const createMappingButton = document.getElementById(
+  "createMappingButton",
+) as HTMLButtonElement | null;
 const saveMappingButton = document.getElementById("saveMappingButton") as HTMLButtonElement | null;
 const importButton = document.getElementById("importButton") as HTMLButtonElement | null;
 const statusArea = document.getElementById("statusArea");
@@ -74,6 +82,7 @@ const importConfigButton = document.getElementById("importConfigButton") as HTML
 const configImportInput = document.getElementById("configImportInput") as HTMLInputElement | null;
 
 let mappingController: MappingUIController | null = null;
+let mappingFormVisible = false;
 let rulesController: RulesUIController | null = null;
 let detectedHeader: HeaderDetectionResult | null = null;
 let transactions: UnifiedTx[] = [];
@@ -82,6 +91,7 @@ let anonymizedCache: UnifiedTx[] = [];
 let lastAnonymizationWarnings: string[] = [];
 let displaySettings: DisplaySettings = loadDisplaySettings();
 let appInitialized = false;
+let currentHeaders: string[] | null = null;
 
 function getConfiguredRules(): AnonRule[] {
   if (rulesController) {
@@ -124,11 +134,24 @@ const ensuredLogoutButton = assertElement(logoutButton, "Logout Button fehlt");
 
 const ensuredFileInput = assertElement(fileInput, "CSV Eingabefeld nicht gefunden");
 const ensuredBankNameInput = assertElement(bankNameInput, "Banknamenfeld nicht gefunden");
+const ensuredBankNameOptions = assertElement(
+  bankNameOptions,
+  "Banknamenliste nicht gefunden",
+);
 const ensuredBookingAccountInput = assertElement(
   bookingAccountInput,
   "Buchungskonto Eingabefeld fehlt",
 );
+const ensuredMappingSummary = assertElement(mappingSummary, "Mapping-Übersicht nicht gefunden");
+const ensuredMappingFormWrapper = assertElement(
+  mappingFormWrapper,
+  "Mapping-Formularcontainer nicht gefunden",
+);
 const ensuredMappingContainer = assertElement(mappingContainer, "Mapping-Container nicht gefunden");
+const ensuredCreateMappingButton = assertElement(
+  createMappingButton,
+  "Mapping erstellen Button fehlt",
+);
 const ensuredSaveMappingButton = assertElement(saveMappingButton, "Mapping speichern Button fehlt");
 const ensuredImportButton = assertElement(importButton, "Import Button fehlt");
 const ensuredStatusArea = assertElement(statusArea, "Statusbereich fehlt");
@@ -289,6 +312,10 @@ function setTokenFormDisabled(disabled: boolean): void {
 function handleLogout(): void {
   void auth.logout();
   clearPersistentData();
+  refreshBankNameOptions("");
+  hideMappingForm();
+  currentHeaders = null;
+  updateMappingSummary();
   anonymizedActive = false;
   anonymizedCache = [];
   lastAnonymizationWarnings = [];
@@ -405,6 +432,7 @@ function handleAuthenticated(message?: string): void {
     hydrateTransactionsFromStorage();
     hydrateRulesFromStorage();
   }
+  refreshBankNameOptions();
   showMain();
   if (message) {
     setStatus(message, "info");
@@ -505,8 +533,170 @@ function loadMapping(bankName: string): MappingSelection | null {
   return rest;
 }
 
-function ensureMappingController(headers: string[], initial?: MappingSelection): void {
-  mappingController = buildMappingUI(ensuredMappingContainer, headers, initial ?? undefined);
+const SUMMARY_FIELD_LABELS: Record<keyof MappingSelection, string> = {
+  booking_date: "Buchungsdatum",
+  booking_text: "Buchungstext",
+  booking_type: "Buchungsart",
+  booking_amount: "Betrag",
+  booking_date_parse_format: "Datumsformat (Import)",
+};
+
+function createSummaryRow(label: string, value: string, className?: string): HTMLTableRowElement {
+  const row = document.createElement("tr");
+  if (className) {
+    row.className = className;
+  }
+  const labelCell = document.createElement("th");
+  labelCell.scope = "row";
+  labelCell.textContent = label;
+  const valueCell = document.createElement("td");
+  valueCell.textContent = value;
+  row.appendChild(labelCell);
+  row.appendChild(valueCell);
+  return row;
+}
+
+function renderMappingSummary(bankName: string, mapping: MappingSelection | null): void {
+  ensuredMappingSummary.innerHTML = "";
+
+  if (!bankName) {
+    const message = document.createElement("p");
+    message.className = "mapping-summary-empty";
+    message.textContent = "Bitte Bankname auswählen.";
+    ensuredMappingSummary.appendChild(message);
+    ensuredMappingSummary.setAttribute("data-state", "empty");
+    return;
+  }
+
+  if (!mapping) {
+    const message = document.createElement("p");
+    message.className = "mapping-summary-empty";
+    message.textContent = `Kein Mapping für "${bankName}" vorhanden.`;
+    ensuredMappingSummary.appendChild(message);
+    ensuredMappingSummary.setAttribute("data-state", "empty");
+    return;
+  }
+
+  const heading = document.createElement("h3");
+  heading.className = "mapping-summary-heading";
+  heading.textContent = `Mapping für ${bankName}`;
+  ensuredMappingSummary.appendChild(heading);
+
+  const table = document.createElement("table");
+  table.className = "mapping-summary-table";
+  const body = document.createElement("tbody");
+
+  (['booking_date', 'booking_text', 'booking_type', 'booking_amount'] as const).forEach((key) => {
+    const values = mapping[key];
+    const display = values.length > 0 ? values.join("; ") : "–";
+    body.appendChild(createSummaryRow(SUMMARY_FIELD_LABELS[key], display));
+  });
+
+  const parseFormat = mapping.booking_date_parse_format?.trim() ?? "";
+  body.appendChild(
+    createSummaryRow(
+      SUMMARY_FIELD_LABELS.booking_date_parse_format,
+      parseFormat.length > 0 ? parseFormat : "–",
+      "mapping-summary-format",
+    ),
+  );
+
+  table.appendChild(body);
+  ensuredMappingSummary.appendChild(table);
+  ensuredMappingSummary.setAttribute("data-state", "populated");
+}
+
+function updateMappingSummary(): void {
+  const bankName = ensuredBankNameInput.value.trim();
+  const mapping = bankName ? loadMapping(bankName) : null;
+  renderMappingSummary(bankName, mapping);
+}
+
+function setMappingFormVisible(visible: boolean): void {
+  mappingFormVisible = visible;
+  ensuredMappingFormWrapper.hidden = !visible;
+  ensuredMappingSummary.hidden = visible;
+  ensuredSaveMappingButton.disabled = !visible;
+}
+
+function hideMappingForm(): void {
+  setMappingFormVisible(false);
+  mappingController = null;
+  ensuredMappingContainer.innerHTML = "";
+}
+
+function openMappingFormForCurrentBank(): boolean {
+  const bankName = ensuredBankNameInput.value.trim();
+  if (!bankName) {
+    setStatus("Bitte Banknamen angeben.", "warning");
+    return false;
+  }
+
+  const headers = currentHeaders ?? detectedHeader?.header ?? [];
+  if (!headers || headers.length === 0) {
+    setStatus("Bitte zuerst eine CSV-Datei laden.", "warning");
+    return false;
+  }
+
+  currentHeaders = headers;
+  const stored = loadMapping(bankName);
+  mappingController = buildMappingUI(ensuredMappingContainer, headers, stored ?? undefined);
+  setMappingFormVisible(true);
+
+  if (stored) {
+    setStatus(`Mapping für ${bankName} bearbeiten.`, "info");
+  } else {
+    setStatus(`Mapping für ${bankName} erstellen.`, "info");
+  }
+
+  return true;
+}
+
+function getAvailableBankNames(): string[] {
+  const seen = new Map<string, string>();
+  loadBankMappings()
+    .map((entry) => entry.bank_name.trim())
+    .filter((name) => name.length > 0)
+    .forEach((name) => {
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, name);
+      }
+    });
+  return Array.from(seen.values()).sort((a, b) =>
+    a.localeCompare(b, "de", { sensitivity: "base" }),
+  );
+}
+
+function ensureBankNameOption(name: string): void {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return;
+  }
+  const normalized = trimmed.toLowerCase();
+  const exists = Array.from(ensuredBankNameOptions.options).some(
+    (option) => option.value.trim().toLowerCase() === normalized,
+  );
+  if (!exists) {
+    const option = document.createElement("option");
+    option.value = trimmed;
+    ensuredBankNameOptions.appendChild(option);
+  }
+}
+
+function refreshBankNameOptions(preserveSelection?: string): void {
+  const currentValue = preserveSelection ?? ensuredBankNameInput.value;
+  ensuredBankNameOptions.innerHTML = "";
+  const names = getAvailableBankNames();
+  names.forEach((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    ensuredBankNameOptions.appendChild(option);
+  });
+  if (currentValue) {
+    ensuredBankNameInput.value = currentValue;
+    ensureBankNameOption(currentValue);
+  }
 }
 
 function handleFileSelection(file: File): void {
@@ -522,13 +712,11 @@ function handleFileSelection(file: File): void {
       const bankSuggestion = detectedHeader.detectedBank ?? "";
       if (bankSuggestion && ensuredBankNameInput.value.trim().length === 0) {
         ensuredBankNameInput.value = bankSuggestion;
+        ensureBankNameOption(bankSuggestion);
       }
-      const storedMapping = ensuredBankNameInput.value
-        ? loadMapping(ensuredBankNameInput.value.trim())
-        : bankSuggestion
-        ? loadMapping(bankSuggestion)
-        : null;
-      ensureMappingController(headers, storedMapping ?? undefined);
+      currentHeaders = headers;
+      hideMappingForm();
+      updateMappingSummary();
       if (detectedHeader.warning) {
         setStatus(detectedHeader.warning, "warning");
       } else {
@@ -545,17 +733,29 @@ function handleFileSelection(file: File): void {
 }
 
 function getCurrentMapping(bankName: string): BankMapping | null {
-  if (!mappingController) {
+  if (mappingController) {
+    const mapping = mappingController.getMapping();
+    return {
+      bank_name: bankName,
+      booking_date: mapping.booking_date,
+      booking_text: mapping.booking_text,
+      booking_type: mapping.booking_type,
+      booking_amount: mapping.booking_amount,
+      booking_date_parse_format: mapping.booking_date_parse_format,
+    };
+  }
+
+  const stored = loadMapping(bankName);
+  if (!stored) {
     return null;
   }
-  const mapping = mappingController.getMapping();
   return {
     bank_name: bankName,
-    booking_date: mapping.booking_date,
-    booking_text: mapping.booking_text,
-    booking_type: mapping.booking_type,
-    booking_amount: mapping.booking_amount,
-    booking_date_parse_format: mapping.booking_date_parse_format,
+    booking_date: [...stored.booking_date],
+    booking_text: [...stored.booking_text],
+    booking_type: [...stored.booking_type],
+    booking_amount: [...stored.booking_amount],
+    booking_date_parse_format: stored.booking_date_parse_format,
   };
 }
 
@@ -701,36 +901,65 @@ function handleDisplaySettingsUpdate(): void {
   setStatus(message, "info");
 }
 
-function handleSaveMapping(): void {
+function persistMapping(): { bankName: string; updatedCount: number } | null {
+  if (!mappingController) {
+    setStatus(
+      'Bitte zuerst auf "Mapping erstellen" klicken, um das Formular zu öffnen.',
+      "warning",
+    );
+    return null;
+  }
   const bankName = ensuredBankNameInput.value.trim();
   if (!bankName) {
     setStatus("Bitte Banknamen angeben, bevor das Mapping gespeichert wird.", "warning");
-    return;
+    return null;
   }
   const mapping = getCurrentMapping(bankName);
   if (!mapping) {
     setStatus("Es wurde noch kein Mapping erstellt.", "warning");
-    return;
+    return null;
   }
   const validation = validateMapping(mapping);
   if (!validation.valid) {
     const missingLabels = validation.missing.map(describeMappingField);
     setStatus(`Folgende Zuordnungen fehlen: ${missingLabels.join(", ")}`, "warning");
-    return;
+    return null;
   }
   saveBankMapping(mapping);
+  refreshBankNameOptions(bankName);
   const updatedCount = reformatTransactionsForBank(mapping);
   if (updatedCount > 0) {
     transactions = loadTransactions();
     resetAnonymizationState();
     renderTransactions(transactions);
+  }
+  return { bankName, updatedCount };
+}
+
+function handleSaveMapping(): void {
+  const result = persistMapping();
+  if (!result) {
+    return;
+  }
+  const { updatedCount } = result;
+  if (updatedCount > 0) {
     setStatus(
       `Mapping gespeichert. ${updatedCount} gespeicherte Umsätze aktualisiert.`,
-      "info"
+      "info",
     );
   } else {
     setStatus("Mapping gespeichert.", "info");
   }
+  hideMappingForm();
+  updateMappingSummary();
+}
+
+function handleCreateMapping(): void {
+  if (mappingFormVisible) {
+    setStatus("Das Mapping-Formular ist bereits geöffnet.", "info");
+    return;
+  }
+  void openMappingFormForCurrentBank();
 }
 
 async function handleImport(): Promise<void> {
@@ -799,20 +1028,17 @@ async function handleImport(): Promise<void> {
 }
 
 function handleBankNameChange(): void {
-  if (!mappingController) {
-    return;
+  if (mappingFormVisible) {
+    hideMappingForm();
   }
   const bankName = ensuredBankNameInput.value.trim();
+  updateMappingSummary();
   if (!bankName) {
-    mappingController.clear();
     return;
   }
   const stored = loadMapping(bankName);
   if (stored) {
-    mappingController.setMapping(stored);
     setStatus(`Gespeichertes Mapping für ${bankName} geladen.`, "info");
-  } else {
-    mappingController.clear();
   }
 }
 
@@ -981,6 +1207,11 @@ async function handleConfigFileImport(file: File): Promise<void> {
       }
     }
 
+    if (mappingProvided) {
+      refreshBankNameOptions();
+      updateMappingSummary();
+    }
+
     if (importedRulesResult) {
       if (rulesController) {
         rulesController.setRules(importedRulesResult.rules);
@@ -1060,6 +1291,7 @@ function handleApplySingleRule(rule: AnonRule): void {
 
 function init(): void {
   hydrateTransactionsFromStorage();
+  updateMappingSummary();
 
   ensuredFileInput.addEventListener("change", (event) => {
     const input = event.currentTarget as HTMLInputElement;
@@ -1067,6 +1299,11 @@ function init(): void {
     if (file) {
       handleFileSelection(file);
     }
+  });
+
+  ensuredCreateMappingButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleCreateMapping();
   });
 
   ensuredBankNameInput.addEventListener("change", handleBankNameChange);
