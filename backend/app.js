@@ -396,6 +396,34 @@ function createApp({ db, origins = [], basePath } = {}) {
       }),
     );
 
+    router.get(
+      "/transactions/imports",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const imports = await db.listTransactionImports(req.authToken);
+        const normalized = imports.map((entry) => {
+          const created = entry.created_on;
+          let createdOn = null;
+          if (created instanceof Date) {
+            createdOn = created.toISOString();
+          } else if (typeof created === "string") {
+            const parsed = Date.parse(created);
+            createdOn = Number.isNaN(parsed) ? created : new Date(parsed).toISOString();
+          }
+
+          return {
+            bank_name: entry.bank_name ?? "",
+            booking_account: entry.booking_account ?? "",
+            created_on: createdOn,
+            first_booking_date: entry.first_booking_date ?? "",
+            last_booking_date: entry.last_booking_date ?? "",
+          };
+        });
+
+        res.json({ imports: normalized });
+      }),
+    );
+
     router.post(
       "/transactions",
       requireAuth,

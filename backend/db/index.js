@@ -129,6 +129,31 @@ function createDb(pool) {
     return result.rows.map(rowToUnifiedTransaction);
   }
 
+  async function listTransactionImports(token) {
+    const result = await pool.query(
+      `SELECT bank_name,
+              COALESCE(booking_account, '') AS booking_account,
+              created_on,
+              MIN(COALESCE(NULLIF(booking_date_raw, ''), booking_date)) AS first_booking_date,
+              MAX(COALESCE(NULLIF(booking_date_raw, ''), booking_date)) AS last_booking_date
+         FROM masked_transactions
+        WHERE token = $1
+        GROUP BY bank_name, booking_account, created_on
+        ORDER BY bank_name ASC, booking_account ASC, created_on DESC`,
+      [token],
+    );
+
+    return result.rows.map((row) => ({
+      bank_name: typeof row.bank_name === "string" ? row.bank_name : "",
+      booking_account: typeof row.booking_account === "string" ? row.booking_account : "",
+      created_on: row.created_on ?? null,
+      first_booking_date:
+        typeof row.first_booking_date === "string" ? row.first_booking_date : "",
+      last_booking_date:
+        typeof row.last_booking_date === "string" ? row.last_booking_date : "",
+    }));
+  }
+
   async function replaceTransactions(token, entries) {
     await withClient(pool, async (client) => {
       await client.query("BEGIN");
@@ -276,6 +301,7 @@ function createDb(pool) {
     updateSettings,
     listTransactions,
     replaceTransactions,
+    listTransactionImports,
     readMaskedTransactions,
     replaceMaskedTransactions,
     listBankMappings,
