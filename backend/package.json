@@ -1,0 +1,18 @@
+{
+  "name": "umsatz-anonymizer-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "pretest": "npm run build --prefix ../frontend",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "supertest": "^6.3.4"
+  }
+}
