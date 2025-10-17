@@ -1,6 +1,6 @@
-import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat.js";
-import { DEFAULT_DATE_DISPLAY_FORMAT } from "./displaySettings.js";
-import { BankMapping, DisplaySettings, UnifiedTx } from "./types.js";
+import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat";
+import { DEFAULT_DATE_DISPLAY_FORMAT } from "./displaySettings";
+import { BankMapping, DisplaySettings, UnifiedTx } from "./types";
 
 type MappingSelection = Omit<BankMapping, "bank_name">;
 

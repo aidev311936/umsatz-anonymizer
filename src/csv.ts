@@ -1,23 +1,4 @@
-interface PapaParseError {
-  message: string;
-}
-
-interface PapaParseResult {
-  data: unknown[];
-  errors: PapaParseError[];
-}
-
-interface PapaParseConfig {
-  delimiter?: string;
-  skipEmptyLines?: boolean | "greedy";
-  transform?: (value: string) => string;
-  complete: (results: PapaParseResult) => void;
-  error?: (error: Error) => void;
-}
-
-declare const Papa: {
-  parse(input: string, config: PapaParseConfig): void;
-};
+import Papa from "papaparse";
 
 function normalizeValue(value: unknown): string {
   if (typeof value === "string") {
@@ -49,7 +30,7 @@ export function parseCsv(file: File): Promise<string[][]> {
             resolve(rows as string[][]);
           },
           error: (error) => {
-            reject(error);
+            reject(error as Error);
           },
         });
       } catch (error) {

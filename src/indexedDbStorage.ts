@@ -1,5 +1,5 @@
-import { computeUnifiedTxHash } from "./transactionHash.js";
-import { UnifiedTx } from "./types.js";
+import { computeUnifiedTxHash } from "./transactionHash";
+import { UnifiedTx } from "./types";
 
 const DB_NAME = "umsatz_anonymizer";
 const DB_VERSION = 3;
