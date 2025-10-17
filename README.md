@@ -57,8 +57,8 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
    - Alternativ kann eine Render „cron job“ oder ein separates Skript genutzt werden.
 
 4. **Frontend deployen**
-   - Statisches Hosting (z. B. Render Static Site) mit den Dateien aus `dist/` bzw. `index.html`.
-   - Im HTML `<head>` eine Meta-Definition ergänzen, damit das Frontend weiß, wo das Backend läuft:
+   - Der `npm run start:auth`-Service liefert nun automatisch die gebaute SPA aus `dist/` mit aus. Stelle sicher, dass der Build-Schritt (`npm run build`) vor dem Start erfolgreich war.
+   - Falls du das Frontend getrennt hosten möchtest (z. B. Render Static Site), kannst du weiterhin die Dateien aus `dist/` verwenden. Ergänze in diesem Fall im HTML `<head>` eine Meta-Definition, damit das Frontend weiß, wo das Backend läuft:
      ```html
      <meta name="backend-base-url" content="https://<your-backend-service>.onrender.com">
      ```

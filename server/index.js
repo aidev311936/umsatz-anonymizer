@@ -12,6 +12,9 @@ if (databaseUrl) {
   const { createServer } = require("node:http");
   const { randomBytes } = require("node:crypto");
   const { URL } = require("node:url");
+  const fs = require("node:fs");
+  const fsp = fs.promises;
+  const path = require("node:path");
 
   const PORT = parseInt(process.env.PORT ?? "3000", 10);
   const TOKEN_COOKIE_NAME = process.env.TOKEN_COOKIE_NAME ?? "umsatz_token";
@@ -179,43 +182,194 @@ if (databaseUrl) {
       });
   }
 
+  const STATIC_DIR = path.join(__dirname, "..", "dist");
+  const INDEX_HTML_PATH = path.join(STATIC_DIR, "index.html");
+
+  const hasStaticDir = (() => {
+    try {
+      return fs.statSync(STATIC_DIR).isDirectory();
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        console.warn("Failed to stat static directory", error);
+      }
+      return false;
+    }
+  })();
+
+  const MIME_TYPES = new Map(
+    [
+      [".html", "text/html; charset=utf-8"],
+      [".js", "application/javascript; charset=utf-8"],
+      [".css", "text/css; charset=utf-8"],
+      [".json", "application/json; charset=utf-8"],
+      [".map", "application/json; charset=utf-8"],
+      [".svg", "image/svg+xml"],
+      [".png", "image/png"],
+      [".jpg", "image/jpeg"],
+      [".jpeg", "image/jpeg"],
+      [".gif", "image/gif"],
+      [".webp", "image/webp"],
+      [".ico", "image/x-icon"],
+      [".txt", "text/plain; charset=utf-8"],
+      [".woff", "font/woff"],
+      [".woff2", "font/woff2"],
+    ].map(([ext, type]) => [ext, type]),
+  );
+
+  function contentTypeFor(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    return MIME_TYPES.get(ext) ?? "application/octet-stream";
+  }
+
+  function isImmutableAsset(filePath) {
+    const normalized = path.normalize(filePath);
+    const assetsDir = path.join(STATIC_DIR, "assets") + path.sep;
+    return normalized.startsWith(assetsDir);
+  }
+
+  async function tryServeStatic(req, res, url) {
+    if (!hasStaticDir) {
+      return false;
+    }
+
+    const method = req.method?.toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+      return false;
+    }
+
+    let pathname;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      return false;
+    }
+
+    let candidatePath = path.join(STATIC_DIR, pathname);
+    const normalized = path.normalize(candidatePath);
+    if (!normalized.startsWith(STATIC_DIR)) {
+      return false;
+    }
+
+    let filePath = normalized;
+    let stat;
+    try {
+      stat = await fsp.stat(filePath);
+      if (stat.isDirectory()) {
+        filePath = path.join(filePath, "index.html");
+        stat = await fsp.stat(filePath);
+      }
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        // Serve the SPA entry point for unknown routes (except asset requests).
+        if (!pathname.startsWith("/assets/") && pathname !== "/__vite_ping" && pathname !== "/favicon.ico") {
+          try {
+            stat = await fsp.stat(INDEX_HTML_PATH);
+            filePath = INDEX_HTML_PATH;
+          } catch (indexError) {
+            if (indexError?.code !== "ENOENT") {
+              console.error("Failed to access index.html", indexError);
+            }
+            return false;
+          }
+        } else {
+          return false;
+        }
+      } else {
+        console.error("Failed to access static asset", error);
+        return false;
+      }
+    }
+
+    const contentType = contentTypeFor(filePath);
+    res.statusCode = 200;
+    res.setHeader("Content-Type", contentType);
+    if (isImmutableAsset(filePath)) {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    } else {
+      res.setHeader("Cache-Control", "no-store");
+    }
+
+    if (method === "HEAD") {
+      res.setHeader("Content-Length", String(stat.size));
+      res.end();
+      return true;
+    }
+
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", (error) => {
+      console.error("Streaming static asset failed", error);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+      }
+      res.end(
+        JSON.stringify({
+          valid: false,
+          message: "Interner Fehler beim Ausliefern der Anwendung.",
+        }),
+      );
+    });
+    stream.pipe(res);
+    return true;
+  }
+
   const server = createServer((req, res) => {
     const origin = req.headers.origin;
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-    if (req.method === "OPTIONS") {
-      res.statusCode = 204;
+    const handle = async () => {
+      if (req.method === "OPTIONS") {
+        res.statusCode = 204;
+        if (origin) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+        }
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          req.headers["access-control-request-headers"] ?? "content-type",
+        );
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.end();
+        return;
+      }
+
       if (origin) {
         res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Credentials", "true");
       }
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        req.headers["access-control-request-headers"] ?? "content-type",
+
+      if (req.method === "POST" && url.pathname === "/auth/token") {
+        handleTokenRequest(req, res);
+        return;
+      }
+
+      if (await tryServeStatic(req, res, url)) {
+        return;
+      }
+
+      res.statusCode = 404;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(
+        JSON.stringify({
+          valid: false,
+          message: "Die angeforderte Ressource wurde nicht gefunden.",
+        }),
       );
-      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-      res.end();
-      return;
-    }
+    };
 
-    if (origin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-
-    if (req.method === "POST" && url.pathname === "/auth/token") {
-      handleTokenRequest(req, res);
-      return;
-    }
-
-    res.statusCode = 404;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(
-      JSON.stringify({
-        valid: false,
-        message: "Die angeforderte Ressource wurde nicht gefunden.",
-      }),
-    );
+    handle().catch((error) => {
+      console.error("Unexpected server error", error);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+      }
+      res.end(
+        JSON.stringify({
+          valid: false,
+          message: "Interner Fehler im Authentifizierungsdienst.",
+        }),
+      );
+    });
   });
 
   server.listen(PORT, () => {
