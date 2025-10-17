@@ -34,7 +34,8 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
 
 2. **Backend-Service konfigurieren**
    - Neuen „Web Service“ auf Render anlegen, Repository verbinden.
-   - Build Command: `npm install && npm run build`
+  - Build Command: `npm install && npm run build`
+    - Render setzt `NODE_ENV=production` und würde sonst Dev-Dependencies wie `vite` überspringen; `.npmrc` erzwingt daher einen vollständigen Install.
    - Start Command: `npm run start:backend`
    - Environment Variables:
      - `DATABASE_URL` – von Render bereitgestellte Verbindungs-URL
