@@ -1,5 +1,5 @@
-import { formatDateWithFormat } from "./dateFormat.js";
-import { DisplaySettings, UnifiedTx } from "./types.js";
+import { formatDateWithFormat } from "./dateFormat";
+import { DisplaySettings, UnifiedTx } from "./types";
 
 export const DEFAULT_DATE_DISPLAY_FORMAT = "dd.MM.yyyy";
 export const DEFAULT_AMOUNT_DISPLAY_FORMAT = "#.##0,00";

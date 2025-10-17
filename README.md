@@ -34,7 +34,9 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
 
 2. **Backend-Service konfigurieren**
    - Neuen „Web Service“ auf Render anlegen, Repository verbinden.
-   - Build Command: `npm install && npm run build`
+  - Pre-Deploy Command: `npm install --include=dev`
+    - Render führt Builds mit `NODE_ENV=production` aus und überspringt dadurch standardmäßig Dev-Dependencies wie `vite`. Der Pre-Deploy-Schritt installiert sie explizit, bevor der eigentliche Build startet.
+  - Build Command: `npm run build`
    - Start Command: `npm run start:backend`
    - Environment Variables:
      - `DATABASE_URL` – von Render bereitgestellte Verbindungs-URL
@@ -55,8 +57,10 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
    - Alternativ kann eine Render „cron job“ oder ein separates Skript genutzt werden.
 
 4. **Frontend deployen**
-   - Statisches Hosting (z. B. Render Static Site) mit den Dateien aus `dist/` bzw. `index.html`.
-   - Im HTML `<head>` eine Meta-Definition ergänzen, damit das Frontend weiß, wo das Backend läuft:
+   - **Branch:** Wähle beim Render-Webservice den Branch `codex/set-up-vite-with-vue-and-tailwind-css` (bzw. den für den Vue-Umstieg verwendeten Feature-Branch). Die Anwendung lebt vollständig im Repository-Wurzelverzeichnis, daher bleibt das Feld **Root Directory** leer.
+   - **Build Command:** `npm install --include=dev && npm run build` – so installiert Render auch Dev-Dependencies (Vite) bevor der Produktionsbuild startet. Setze zusätzlich `NPM_CONFIG_PRODUCTION=false` in den Environment Variables, damit zukünftige Builds nicht erneut scheitern.
+   - **Start Command:** `npm run start:auth` – der Auth-Service dient gleichzeitig die Dateien aus `dist/` aus. Stelle sicher, dass der Build-Schritt (`npm run build`) vor dem Start erfolgreich war.
+   - Falls du das Frontend getrennt hosten möchtest (z. B. Render Static Site), kannst du weiterhin die Dateien aus `dist/` verwenden. Ergänze in diesem Fall im HTML `<head>` eine Meta-Definition, damit das Frontend weiß, wo das Backend läuft:
      ```html
      <meta name="backend-base-url" content="https://<your-backend-service>.onrender.com">
      ```

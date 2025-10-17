@@ -1,4 +1,4 @@
-import { UnifiedTx } from "./types.js";
+import { UnifiedTx } from "./types";
 
 const encoder = new TextEncoder();
 

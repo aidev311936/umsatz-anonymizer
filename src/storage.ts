@@ -1,12 +1,12 @@
-import { sanitizeDisplaySettings } from "./displaySettings.js";
+import { sanitizeDisplaySettings } from "./displaySettings";
 import {
   AnonRule,
   BankMapping,
   DisplaySettings,
   TransactionImportSummary,
   UnifiedTx,
-} from "./types.js";
-import { computeUnifiedTxHash } from "./transactionHash.js";
+} from "./types";
+import { computeUnifiedTxHash } from "./transactionHash";
 import {
   addRawTransactionIfMissing,
   clearAllIndexedDbData,
@@ -15,8 +15,8 @@ import {
   loadMaskedTransactionsSnapshot,
   storeMaskedTransactions as storeMaskedTransactionsInDb,
   storeRawTransactions as storeRawTransactionsInDb,
-} from "./indexedDbStorage.js";
-import type { StoredTransaction } from "./indexedDbStorage.js";
+} from "./indexedDbStorage";
+import type { StoredTransaction } from "./indexedDbStorage";
 
 declare global {
   interface Window {

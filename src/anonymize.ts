@@ -1,4 +1,4 @@
-import { AnonRule, UnifiedTx } from "./types.js";
+import { AnonRule, UnifiedTx } from "./types";
 
 type CompiledRule =
   | ({ type: "regex"; regex: RegExp; replacement: string } & Omit<Extract<AnonRule, { type: "regex" }>, "pattern" | "flags" | "replacement">)
