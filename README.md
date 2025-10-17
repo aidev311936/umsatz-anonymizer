@@ -57,7 +57,7 @@ npm run start:backend # Startet das Backend auf PORT (Default 8080)
    - Alternativ kann eine Render „cron job“ oder ein separates Skript genutzt werden.
 
 4. **Frontend deployen**
-   - **Branch:** Wähle beim Render-Webservice den Branch `work`. Die Anwendung lebt vollständig im Repository-Wurzelverzeichnis, daher bleibt das Feld **Root Directory** leer.
+   - **Branch:** Wähle beim Render-Webservice den Branch `codex/set-up-vite-with-vue-and-tailwind-css` (bzw. den für den Vue-Umstieg verwendeten Feature-Branch). Die Anwendung lebt vollständig im Repository-Wurzelverzeichnis, daher bleibt das Feld **Root Directory** leer.
    - **Build Command:** `npm install --include=dev && npm run build` – so installiert Render auch Dev-Dependencies (Vite) bevor der Produktionsbuild startet. Setze zusätzlich `NPM_CONFIG_PRODUCTION=false` in den Environment Variables, damit zukünftige Builds nicht erneut scheitern.
    - **Start Command:** `npm run start:auth` – der Auth-Service dient gleichzeitig die Dateien aus `dist/` aus. Stelle sicher, dass der Build-Schritt (`npm run build`) vor dem Start erfolgreich war.
    - Falls du das Frontend getrennt hosten möchtest (z. B. Render Static Site), kannst du weiterhin die Dateien aus `dist/` verwenden. Ergänze in diesem Fall im HTML `<head>` eine Meta-Definition, damit das Frontend weiß, wo das Backend läuft:
