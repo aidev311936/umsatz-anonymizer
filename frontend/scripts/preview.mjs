@@ -14,5 +14,15 @@ const server = await preview({
 
 server.printUrls();
 
-// Keep process alive until it is terminated manually (Render sends SIGTERM).
-process.stdin.resume();
+const shutdown = async (signal) => {
+  console.info(`\nReceived ${signal}, shutting down preview server...`);
+  await server.close();
+  process.exit(0);
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+await new Promise(() => {
+  // Intentional: keep the event loop busy until a termination signal arrives.
+});
