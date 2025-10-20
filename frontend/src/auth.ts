@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from "./apiBase";
+
 const TOKEN_COOKIE_NAME = "umsatz_token";
 
 declare global {
@@ -9,10 +11,52 @@ declare global {
   }
 }
 
-const DEFAULT_TOKEN_ENDPOINT = "/auth/token";
-const DEFAULT_SESSION_ENDPOINT = "/auth/session";
+const DEFAULT_TOKEN_PATH = "/auth/token";
+const DEFAULT_SESSION_PATH = "/auth/session";
+const DEFAULT_LOGOUT_PATH = "/auth/logout";
 let cachedTokenEndpoint: string | null = null;
 let cachedSessionEndpoint: string | null = null;
+
+function buildUrlWithBase(path: string): string {
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) {
+    return path;
+  }
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${baseUrl}${normalizedPath}`;
+}
+
+function resolveCandidateEndpoint(candidate: string | null | undefined): string | null {
+  const trimmed = candidate?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    const baseUrl = getApiBaseUrl();
+    if (baseUrl) {
+      const baseForUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+      try {
+        return new URL(trimmed, baseForUrl).toString();
+      } catch {
+        // fall through to window-based resolution
+      }
+    }
+
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "http://localhost";
+    try {
+      const baseForUrl = origin.endsWith("/") ? origin : `${origin}/`;
+      return new URL(trimmed, baseForUrl).toString();
+    } catch {
+      return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+    }
+  }
+}
 
 function normalizeEndpointForComparison(endpoint: string): string {
   if (!endpoint) {
@@ -54,15 +98,16 @@ function resolveTokenEndpoint(): string {
   }
 
   for (const candidate of candidates) {
-    const trimmed = candidate?.trim();
-    if (trimmed) {
-      cachedTokenEndpoint = trimmed;
-      return trimmed;
+    const resolved = resolveCandidateEndpoint(candidate);
+    if (resolved) {
+      cachedTokenEndpoint = resolved;
+      return resolved;
     }
   }
 
-  cachedTokenEndpoint = DEFAULT_TOKEN_ENDPOINT;
-  return DEFAULT_TOKEN_ENDPOINT;
+  const fallback = buildUrlWithBase(DEFAULT_TOKEN_PATH);
+  cachedTokenEndpoint = fallback;
+  return fallback;
 }
 
 function deriveSessionEndpointFromToken(tokenEndpoint: string): string {
@@ -75,12 +120,12 @@ function deriveSessionEndpointFromToken(tokenEndpoint: string): string {
       url.hash = "";
       return url.toString();
     }
-    return new URL("/auth/session", url).toString();
+    return new URL(DEFAULT_SESSION_PATH, url).toString();
   } catch {
     if (tokenEndpoint.endsWith("/token")) {
       return tokenEndpoint.replace(/\/token$/, "/session");
     }
-    return DEFAULT_SESSION_ENDPOINT;
+    return buildUrlWithBase(DEFAULT_SESSION_PATH);
   }
 }
 
@@ -123,8 +168,10 @@ function resolveSessionEndpoint(): string {
     }
   }
 
-  if (tokenEndpoint === DEFAULT_TOKEN_ENDPOINT) {
-    cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+  const fallbackSessionEndpoint = buildUrlWithBase(DEFAULT_SESSION_PATH);
+
+  if (normalizeEndpointForComparison(tokenEndpoint) === normalizeEndpointForComparison(fallbackSessionEndpoint)) {
+    cachedSessionEndpoint = fallbackSessionEndpoint;
     return cachedSessionEndpoint;
   }
 
@@ -159,7 +206,7 @@ function resolveSessionValidationEndpoint(): string {
     return derivedEndpoint;
   }
 
-  cachedSessionEndpoint = DEFAULT_SESSION_ENDPOINT;
+  cachedSessionEndpoint = buildUrlWithBase(DEFAULT_SESSION_PATH);
   return cachedSessionEndpoint;
 }
 
@@ -338,16 +385,17 @@ export async function requestNewToken(): Promise<TokenValidationResult> {
 function resolveLogoutEndpoint(): string {
   const tokenEndpoint = resolveTokenEndpoint();
   try {
-    const url = new URL(tokenEndpoint, window.location.href);
+    const base = typeof window !== "undefined" ? window.location.href : "http://localhost";
+    const url = new URL(tokenEndpoint, base);
     if (url.pathname.endsWith("/token")) {
       url.pathname = url.pathname.replace(/\/token$/, "/logout");
       url.search = "";
       url.hash = "";
       return url.toString();
     }
-    return new URL("/auth/logout", url).toString();
+    return new URL(DEFAULT_LOGOUT_PATH, url).toString();
   } catch {
-    return "/auth/logout";
+    return buildUrlWithBase(DEFAULT_LOGOUT_PATH);
   }
 }
 
