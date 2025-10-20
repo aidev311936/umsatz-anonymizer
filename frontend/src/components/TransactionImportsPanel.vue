@@ -10,7 +10,7 @@
         Aktualisieren
       </button>
     </div>
-    <p v-if="history.length === 0" class="mt-4 text-sm text-slate-500">
+    <p v-if="formattedHistory.length === 0" class="mt-4 text-sm text-slate-500">
       Noch wurden keine anonymisierten Buchungen an den Server übertragen.
     </p>
     <div v-else class="mt-4 overflow-hidden rounded-xl border border-slate-200">
@@ -25,7 +25,10 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100 bg-white text-slate-700">
-          <tr v-for="entry in history" :key="`${entry.bank_name}-${entry.booking_account}-${entry.created_on}`">
+          <tr
+            v-for="entry in formattedHistory"
+            :key="`${entry.bank_name}-${entry.booking_account}-${entry.created_on}`"
+          >
             <td class="px-4 py-3 font-medium">{{ entry.bank_name }}</td>
             <td class="px-4 py-3">{{ entry.booking_account }}</td>
             <td class="px-4 py-3">{{ entry.created_on || '–' }}</td>
@@ -39,11 +42,20 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import { formatImportHistory } from "../services/displayService";
 import type { TransactionImportSummary } from "../services/storageService";
+import { useDisplaySettingsStore } from "../stores/displaySettings";
 
-defineProps<{
+const props = defineProps<{
   history: TransactionImportSummary[];
 }>();
 
 defineEmits<{ refresh: [] }>();
+
+const displaySettingsStore = useDisplaySettingsStore();
+
+const formattedHistory = computed(() =>
+  formatImportHistory(props.history, displaySettingsStore.resolvedSettings)
+);
 </script>
