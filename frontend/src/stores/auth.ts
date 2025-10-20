@@ -7,6 +7,7 @@ import {
   validateToken,
   type TokenValidationResult,
 } from "../auth";
+import { resetPersistentData } from "../services/storageService";
 
 interface AuthState {
   token: string | null;
@@ -80,6 +81,7 @@ export const useAuthStore = defineStore("auth", {
       try {
         await performLogout();
       } finally {
+        await resetPersistentData();
         this.token = null;
         this.lastValidation = null;
         this.loading = false;
