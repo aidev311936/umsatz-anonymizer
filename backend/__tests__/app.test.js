@@ -478,7 +478,7 @@ test("persistMaskedTransactions posts booking hashes to backend", async () => {
   });
 
   try {
-    const storageModule = await import("../../dist/storage.js");
+    const storageModule = await import("../../frontend/dist/storage.js");
     const restoreStorage = storageModule.__setMaskedTransactionsStorageForTests({
       loadSnapshot: async () => snapshot,
       store: async () => snapshot,

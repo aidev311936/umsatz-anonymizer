@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Umsatz Anonymizer</title>
+    <meta name="backend-base-url" content="" />
+    <script type="module">
+      const meta = document.querySelector('meta[name="backend-base-url"]');
+      const content = meta?.getAttribute("content")?.trim();
+      if (content) {
+        const normalized = content.replace(/\/$/, "");
+        if (normalized && !window.BACKEND_BASE_URL) {
+          window.BACKEND_BASE_URL = normalized;
+        }
+      }
+    </script>
+  </head>
+  <body class="bg-slate-50 text-slate-900">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
