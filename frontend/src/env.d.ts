@@ -12,3 +12,5 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare const __BACKEND_BASE_URL__: string | undefined;

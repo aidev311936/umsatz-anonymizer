@@ -6,15 +6,12 @@
     <title>Umsatz Anonymizer</title>
     <meta name="backend-base-url" content="" />
     <script type="module">
-      const fromEnv = (import.meta.env.BACKEND_BASE_URL ?? import.meta.env.VITE_BACKEND_BASE_URL ?? "").trim();
-      if (fromEnv) {
-        const normalized = fromEnv.replace(/\/$/, "");
-        if (!window.BACKEND_BASE_URL) {
+      const meta = document.querySelector('meta[name="backend-base-url"]');
+      const content = meta?.getAttribute("content")?.trim();
+      if (content) {
+        const normalized = content.replace(/\/$/, "");
+        if (normalized && !window.BACKEND_BASE_URL) {
           window.BACKEND_BASE_URL = normalized;
-        }
-        const meta = document.querySelector('meta[name="backend-base-url"]');
-        if (meta && meta.getAttribute("content") !== normalized) {
-          meta.setAttribute("content", normalized);
         }
       }
     </script>

@@ -24,6 +24,8 @@ declare global {
   }
 }
 
+declare const __BACKEND_BASE_URL__: string | undefined;
+
 function normalizeBaseUrl(value: unknown): string {
   if (typeof value !== "string") {
     return "";
@@ -36,6 +38,12 @@ function normalizeBaseUrl(value: unknown): string {
 }
 
 function resolveApiBase(): string {
+  const buildTimeValue =
+    typeof __BACKEND_BASE_URL__ !== "undefined" ? normalizeBaseUrl(__BACKEND_BASE_URL__) : "";
+  if (buildTimeValue) {
+    return buildTimeValue;
+  }
+
   const envValue = normalizeBaseUrl(
     import.meta.env?.VITE_BACKEND_BASE_URL ?? import.meta.env?.BACKEND_BASE_URL,
   );
@@ -59,7 +67,20 @@ function resolveApiBase(): string {
   return "";
 }
 
-const API_BASE_URL = resolveApiBase();
+let cachedApiBaseUrl: string | null = null;
+
+function getApiBaseUrl(): string {
+  if (cachedApiBaseUrl && cachedApiBaseUrl.length > 0) {
+    return cachedApiBaseUrl;
+  }
+
+  const resolved = resolveApiBase();
+  if (resolved) {
+    cachedApiBaseUrl = resolved;
+  }
+
+  return cachedApiBaseUrl ?? "";
+}
 
 const maskedTransactionsStorage: {
   loadSnapshot: () => Promise<StoredTransaction[]>;
@@ -86,7 +107,8 @@ function fireAndForget(promise: Promise<unknown>, context: string): void {
 }
 
 async function apiRequest(path: string, init?: RequestInit): Promise<Response> {
-  const url = `${API_BASE_URL}${path}`;
+  const apiBaseUrl = getApiBaseUrl();
+  const url = `${apiBaseUrl}${path}`;
   const headers = new Headers(init?.headers);
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
