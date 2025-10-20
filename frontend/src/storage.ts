@@ -24,15 +24,36 @@ declare global {
   }
 }
 
+function normalizeBaseUrl(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.replace(/\/$/, "");
+}
+
 function resolveApiBase(): string {
-  const meta = document.querySelector('meta[name="backend-base-url"]');
-  const metaContent = meta?.getAttribute("content")?.trim();
-  if (metaContent) {
-    return metaContent.replace(/\/$/, "");
+  const envValue = normalizeBaseUrl(import.meta.env?.VITE_BACKEND_BASE_URL);
+  if (envValue) {
+    return envValue;
   }
-  if (typeof window !== "undefined" && typeof window.BACKEND_BASE_URL === "string") {
-    return window.BACKEND_BASE_URL.replace(/\/$/, "");
+
+  if (typeof window !== "undefined") {
+    const windowValue = normalizeBaseUrl(window.BACKEND_BASE_URL);
+    if (windowValue) {
+      return windowValue;
+    }
   }
+
+  const meta = typeof document !== "undefined" ? document.querySelector('meta[name="backend-base-url"]') : null;
+  const metaValue = normalizeBaseUrl(meta?.getAttribute("content"));
+  if (metaValue) {
+    return metaValue;
+  }
+
   return "";
 }
 

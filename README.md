@@ -79,8 +79,8 @@ Das gebaute Frontend besteht aus statischen Dateien. Zwei Varianten haben sich b
 - **Root Directory:** `frontend`
 - **Build Command:** `npm install && npm run build`
 - **Publish Directory:** `dist`
-- Optional in den „Advanced Settings“ eine Umgebungsvariable `BACKEND_BASE_URL` oder eine HTML-Meta-Definition hinterlegen, falls
-  das Backend unter einer anderen Domain erreichbar ist (siehe unten).
+- Optional in den „Advanced Settings“ eine Umgebungsvariable `VITE_BACKEND_BASE_URL` (oder `BACKEND_BASE_URL` für die
+  Laufzeit-Konfiguration) hinterlegen, falls das Backend unter einer anderen Domain erreichbar ist (siehe unten).
 
 #### Variante B: Render Web Service
 
@@ -96,12 +96,14 @@ Der Befehl `npm run serve` nutzt intern `vite preview` und respektiert die von R
 
 Damit das Frontend weiß, wo das Backend läuft, gibt es mehrere Optionen:
 
-- Im HTML `<head>` eine Meta-Angabe setzen (z. B. über das Render Dashboard unter „Environment Variables" → `FRONTEND_META` und
-  anschließende Template-Erweiterung):
+- Über eine Vite-Umgebungsvariable (`VITE_BACKEND_BASE_URL`) die URL bereits zur Build-Zeit setzen – wird automatisch in
+  `index.html` eingetragen.
+- Im HTML `<head>` optional eine Meta-Angabe setzen (z. B. über das Render Dashboard unter „Environment Variables" →
+  `FRONTEND_META` und anschließende Template-Erweiterung):
   ```html
   <meta name="backend-base-url" content="https://<backend-service>.onrender.com">
   ```
-- Alternativ `window.BACKEND_BASE_URL` vor dem Laden des Bundles definieren.
+- Alternativ `window.BACKEND_BASE_URL` oder `BACKEND_BASE_URL` (als Environment Variable) vor dem Laden des Bundles definieren.
 - Für lokale Entwicklung kann auch ein Proxy in `vite.config.ts` eingerichtet werden.
 
 ## Repository-Root-Skripte
