@@ -24,19 +24,63 @@ declare global {
   }
 }
 
+declare const __BACKEND_BASE_URL__: string | undefined;
+
+function normalizeBaseUrl(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.replace(/\/$/, "");
+}
+
 function resolveApiBase(): string {
-  const meta = document.querySelector('meta[name="backend-base-url"]');
-  const metaContent = meta?.getAttribute("content")?.trim();
-  if (metaContent) {
-    return metaContent.replace(/\/$/, "");
+  const buildTimeValue =
+    typeof __BACKEND_BASE_URL__ !== "undefined" ? normalizeBaseUrl(__BACKEND_BASE_URL__) : "";
+  if (buildTimeValue) {
+    return buildTimeValue;
   }
-  if (typeof window !== "undefined" && typeof window.BACKEND_BASE_URL === "string") {
-    return window.BACKEND_BASE_URL.replace(/\/$/, "");
+
+  const envValue = normalizeBaseUrl(
+    import.meta.env?.VITE_BACKEND_BASE_URL ?? import.meta.env?.BACKEND_BASE_URL,
+  );
+  if (envValue) {
+    return envValue;
   }
+
+  if (typeof window !== "undefined") {
+    const windowValue = normalizeBaseUrl(window.BACKEND_BASE_URL);
+    if (windowValue) {
+      return windowValue;
+    }
+  }
+
+  const meta = typeof document !== "undefined" ? document.querySelector('meta[name="backend-base-url"]') : null;
+  const metaValue = normalizeBaseUrl(meta?.getAttribute("content"));
+  if (metaValue) {
+    return metaValue;
+  }
+
   return "";
 }
 
-const API_BASE_URL = resolveApiBase();
+let cachedApiBaseUrl: string | null = null;
+
+function getApiBaseUrl(): string {
+  if (cachedApiBaseUrl && cachedApiBaseUrl.length > 0) {
+    return cachedApiBaseUrl;
+  }
+
+  const resolved = resolveApiBase();
+  if (resolved) {
+    cachedApiBaseUrl = resolved;
+  }
+
+  return cachedApiBaseUrl ?? "";
+}
 
 const maskedTransactionsStorage: {
   loadSnapshot: () => Promise<StoredTransaction[]>;
@@ -63,7 +107,8 @@ function fireAndForget(promise: Promise<unknown>, context: string): void {
 }
 
 async function apiRequest(path: string, init?: RequestInit): Promise<Response> {
-  const url = `${API_BASE_URL}${path}`;
+  const apiBaseUrl = getApiBaseUrl();
+  const url = `${apiBaseUrl}${path}`;
   const headers = new Headers(init?.headers);
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
