@@ -65,8 +65,10 @@ npm run test --workspace backend
 - **Environment Variables:**
   - `DATABASE_URL` – von Render bereitgestellte Verbindungs-URL
   - `PGSSLMODE=require` – empfohlen, damit TLS-Verbindungen akzeptiert werden
-  - `TOKEN_COOKIE_NAME`, `AUTH_TOKEN_TTL`, `ALLOWED_ORIGINS`, `BACKEND_PUBLIC_ORIGIN`, `AUTH_COOKIE_SECURE`,
-    `AUTH_COOKIE_SAMESITE` – optional gemäß Bedarf
+  - `ALLOWED_ORIGINS` – Komma-separierte Liste erlaubter Browser-Ursprünge (z. B. `https://umsatz-anonymizer-vue-js.onrender.com`)
+  - `BACKEND_PUBLIC_ORIGIN` – öffentliche URL der API (z. B. `https://umsatz-anonymizer-backend.onrender.com`), damit Cookie-
+    Einstellungen automatisch auf „cross-site“ konfiguriert werden
+  - `TOKEN_COOKIE_NAME`, `AUTH_TOKEN_TTL`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAMESITE` – optional für Feinjustierung
 
 Render leitet `PORT` automatisch ein; der Backend-Server liest diesen Wert und lauscht auf dem gewünschten Port.
 
@@ -79,8 +81,8 @@ Das gebaute Frontend besteht aus statischen Dateien. Zwei Varianten haben sich b
 - **Root Directory:** `frontend`
 - **Build Command:** `npm install && npm run build`
 - **Publish Directory:** `dist`
-- Optional in den „Advanced Settings“ eine Umgebungsvariable `VITE_BACKEND_BASE_URL` (oder `BACKEND_BASE_URL` für die
-  Laufzeit-Konfiguration) hinterlegen, falls das Backend unter einer anderen Domain erreichbar ist (siehe unten).
+- Optional in den „Advanced Settings“ eine Umgebungsvariable `VITE_BACKEND_BASE_URL` (oder `BACKEND_BASE_URL`) hinterlegen,
+  falls das Backend unter einer anderen Domain erreichbar ist (siehe unten).
 
 #### Variante B: Render Web Service
 
@@ -96,15 +98,23 @@ Der Befehl `npm run serve` nutzt intern `vite preview` und respektiert die von R
 
 Damit das Frontend weiß, wo das Backend läuft, gibt es mehrere Optionen:
 
-- Über eine Vite-Umgebungsvariable (`VITE_BACKEND_BASE_URL`) die URL bereits zur Build-Zeit setzen – wird automatisch in
-  `index.html` eingetragen.
+- Über eine Render-Umgebungsvariable `VITE_BACKEND_BASE_URL` **oder** `BACKEND_BASE_URL` die URL bereits zur Build-Zeit
+  setzen – wird automatisch in `index.html` eingetragen und vom Frontend verwendet.
 - Im HTML `<head>` optional eine Meta-Angabe setzen (z. B. über das Render Dashboard unter „Environment Variables" →
   `FRONTEND_META` und anschließende Template-Erweiterung):
   ```html
   <meta name="backend-base-url" content="https://<backend-service>.onrender.com">
   ```
-- Alternativ `window.BACKEND_BASE_URL` oder `BACKEND_BASE_URL` (als Environment Variable) vor dem Laden des Bundles definieren.
+- Alternativ `window.BACKEND_BASE_URL` definieren (z. B. über ein eigenes `<script>`), falls die URL erst zur Laufzeit feststeht.
 - Für lokale Entwicklung kann auch ein Proxy in `vite.config.ts` eingerichtet werden.
+
+> 💡 **Render-Beispiel**
+>
+> - Backend-Service (`backend`):
+>   - `ALLOWED_ORIGINS=https://umsatz-anonymizer-vue-js.onrender.com`
+>   - `BACKEND_PUBLIC_ORIGIN=https://umsatz-anonymizer-backend.onrender.com`
+> - Frontend-Service (`frontend`):
+>   - `VITE_BACKEND_BASE_URL=https://umsatz-anonymizer-backend.onrender.com`
 
 ## Repository-Root-Skripte
 

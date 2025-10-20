@@ -36,7 +36,9 @@ function normalizeBaseUrl(value: unknown): string {
 }
 
 function resolveApiBase(): string {
-  const envValue = normalizeBaseUrl(import.meta.env?.VITE_BACKEND_BASE_URL);
+  const envValue = normalizeBaseUrl(
+    import.meta.env?.VITE_BACKEND_BASE_URL ?? import.meta.env?.BACKEND_BASE_URL,
+  );
   if (envValue) {
     return envValue;
   }

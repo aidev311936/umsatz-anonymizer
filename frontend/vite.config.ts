@@ -13,6 +13,7 @@ const previewAllowedHosts = [
 
 export default defineConfig({
   plugins: [vue()],
+  envPrefix: ["VITE_", "BACKEND_"],
   server: {
     port: 5173,
     host: "0.0.0.0",
