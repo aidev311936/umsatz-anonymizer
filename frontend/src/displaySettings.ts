@@ -1,5 +1,5 @@
-import { formatDateWithFormat } from "./dateFormat";
-import { DisplaySettings, UnifiedTx } from "./types";
+import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat";
+import { DisplaySettings, TransactionImportSummary, UnifiedTx } from "./types";
 
 export const DEFAULT_DATE_DISPLAY_FORMAT = "dd.MM.yyyy";
 export const DEFAULT_AMOUNT_DISPLAY_FORMAT = "#.##0,00";
@@ -216,4 +216,69 @@ export function formatTransactionsForDisplay(
     ...tx,
     booking_date: formatTransactionDate(tx, settings),
   }));
+}
+
+function parseImportSummaryDate(value: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const isoParsed = new Date(trimmed);
+  if (isValidDate(isoParsed)) {
+    return isoParsed;
+  }
+
+  const formattedParsed = parseDateWithFormat(trimmed, "yyyy-MM-dd HH:mm:ss.SSSSSS");
+  if (formattedParsed && isValidDate(formattedParsed)) {
+    return formattedParsed;
+  }
+
+  return null;
+}
+
+function formatImportSummaryDateValue(
+  value: string,
+  settings: DisplaySettings
+): string {
+  const parsed = parseImportSummaryDate(value);
+  if (!parsed) {
+    return value;
+  }
+  return formatDateWithFormat(parsed, settings.booking_date_display_format);
+}
+
+function formatImportSummaryOptionalDateValue(
+  value: string | null,
+  settings: DisplaySettings
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  const parsed = parseImportSummaryDate(value);
+  if (!parsed) {
+    return value;
+  }
+  return formatDateWithFormat(parsed, settings.booking_date_display_format);
+}
+
+export function formatImportSummaryDates(
+  summary: TransactionImportSummary,
+  settings: DisplaySettings
+): TransactionImportSummary {
+  return {
+    ...summary,
+    created_on: formatImportSummaryOptionalDateValue(summary.created_on, settings),
+    first_booking_date: formatImportSummaryDateValue(
+      summary.first_booking_date,
+      settings
+    ),
+    last_booking_date: formatImportSummaryDateValue(
+      summary.last_booking_date,
+      settings
+    ),
+  };
 }
