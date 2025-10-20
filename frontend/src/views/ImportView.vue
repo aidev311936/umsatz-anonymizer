@@ -22,14 +22,36 @@
               </datalist>
             </div>
             <div>
-              <label for="booking-account" class="block text-sm font-medium text-slate-700">Buchungskonto</label>
+              <div class="flex items-center gap-2">
+                <label for="booking-account" class="block text-sm font-medium text-slate-700">Buchungskonto</label>
+                <span
+                  class="inline-flex h-5 w-5 items-center justify-center text-slate-400 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                  role="img"
+                  tabindex="0"
+                  aria-label="Dieses Feld erwartet keinen offiziellen IBAN-Eintrag, sondern einen frei wählbaren Alias zur späteren Zuordnung."
+                  title="Dieses Feld erwartet keinen offiziellen IBAN-Eintrag, sondern einen frei wählbaren Alias zur späteren Zuordnung."
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path
+                      fill-rule="evenodd"
+                      d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a1 1 0 0 0-.867.5.996.996 0 0 0-.011.008.996.996 0 0 0 .018 0 1 1 0 0 0-.01 1.993h.01A1 1 0 0 0 10 5Zm-1 4a1 1 0 0 1 1-1c.89 0 1.55.757 1.719 1.456.2.84-.12 1.68-.688 2.102-.27.199-.53.38-.719.563a1 1 0 0 0-.312.727V13a1 1 0 1 1-2 0v-.153c0-.873.389-1.559.916-2.01.225-.198.509-.4.782-.6.195-.145.312-.355.25-.617C10.6 9.498 10.37 9 10 9a1 1 0 0 1-1-1Zm1 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  <span class="sr-only">Information zum Feld Buchungskonto</span>
+                </span>
+              </div>
               <input
                 id="booking-account"
                 v-model="importStore.bookingAccount"
                 type="text"
                 placeholder="z. B. Girokonto"
                 class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-describedby="booking-account-hint"
               />
+              <p id="booking-account-hint" class="mt-2 text-xs text-slate-500">
+                Geben Sie hier einen Alias ein, damit Sie die Buchungen später leichter zuordnen können.
+              </p>
             </div>
             <p v-if="importStore.detectedBank" class="text-sm text-slate-500">
               Erkannte Bank: <span class="font-medium">{{ importStore.detectedBank }}</span>
