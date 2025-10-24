@@ -5,17 +5,38 @@
       <p class="mt-2 text-sm text-slate-600">
         Bitte geben Sie Ihr Zugriffstoken ein, um das Tool zu verwenden.
       </p>
-      <form class="mt-8 space-y-6" @submit.prevent="onSubmit">
-        <div>
-          <label for="token" class="block text-sm font-medium text-slate-700">Token</label>
-          <input
-            id="token"
-            v-model="token"
-            type="password"
-            required
-            autocomplete="off"
-            class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-base shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+      <form class="mt-8 space-y-8" @submit.prevent="onSubmit">
+        <div class="space-y-6">
+          <div class="rounded-xl border border-slate-200 bg-white/60 p-5 shadow-sm">
+            <h2 class="text-sm font-semibold text-slate-700">Token manuell eingeben</h2>
+            <label for="token" class="mt-3 block text-sm font-medium text-slate-700">Token</label>
+            <input
+              id="token"
+              v-model="token"
+              type="password"
+              required
+              autocomplete="off"
+              class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-base shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div class="flex items-center gap-3 text-slate-400">
+            <span class="h-px flex-1 bg-slate-200"></span>
+            <span class="text-xs font-semibold uppercase tracking-wide">oder</span>
+            <span class="h-px flex-1 bg-slate-200"></span>
+          </div>
+          <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 p-5">
+            <h2 class="text-sm font-semibold text-slate-700">Token aus Datei laden</h2>
+            <p class="mt-1 text-sm text-slate-500">
+              Laden Sie eine Textdatei mit Ihrem Token hoch. Der Inhalt wird automatisch in das Feld übernommen.
+            </p>
+            <input
+              type="file"
+              accept=".txt,.token,text/plain"
+              class="mt-4 block w-full cursor-pointer rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              @change="loadTokenFromFile"
+            />
+            <p v-if="fileError" class="mt-2 text-sm font-medium text-rose-600">{{ fileError }}</p>
+          </div>
         </div>
         <div class="flex items-center justify-between">
           <button
@@ -48,6 +69,7 @@ import { useAuthStore } from "../stores/auth";
 
 const auth = useAuthStore();
 const token = ref("");
+const fileError = ref<string | null>(null);
 
 const errorMessage = computed(() => auth.error);
 
@@ -61,5 +83,46 @@ async function onSubmit(): Promise<void> {
 
 async function onRequestToken(): Promise<void> {
   await auth.requestToken();
+}
+
+function loadTokenFromFile(event: Event): void {
+  fileError.value = null;
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    try {
+      const content = typeof reader.result === "string" ? reader.result : "";
+      const trimmed = content.trim();
+
+      if (!trimmed) {
+        fileError.value = "Die ausgewählte Datei enthält kein Token.";
+        return;
+      }
+
+      token.value = trimmed;
+      auth.clearError();
+    } catch (error) {
+      fileError.value =
+        error instanceof Error
+          ? `Token konnte nicht geladen werden: ${error.message}`
+          : "Token konnte nicht aus der Datei geladen werden.";
+    } finally {
+      input.value = "";
+    }
+  };
+
+  reader.onerror = () => {
+    fileError.value = "Die Datei konnte nicht gelesen werden.";
+    input.value = "";
+  };
+
+  reader.readAsText(file);
 }
 </script>
