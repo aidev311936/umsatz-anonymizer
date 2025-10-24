@@ -240,7 +240,9 @@ async function onRequestToken(): Promise<void> {
         }
       }
 
-      openModal();
+      if (!downloadError.value) {
+        openModal();
+      }
     }
   } catch (error) {
     downloadError.value =
