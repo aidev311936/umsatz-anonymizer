@@ -61,11 +61,58 @@
         </p>
       </form>
     </div>
+
+    <div
+      v-if="showTokenModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 px-4"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="modalTitleId"
+      :aria-describedby="modalDescriptionId"
+    >
+      <div
+        ref="modalRef"
+        class="w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl focus:outline-none"
+        tabindex="-1"
+        @keydown="onModalKeydown"
+      >
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 :id="modalTitleId" class="text-xl font-semibold text-slate-900">
+              Willkommen zurück!
+            </h2>
+            <p :id="modalDescriptionId" class="mt-2 text-sm text-slate-600">
+              {{ auth.lastValidation?.message ?? "Ihr neues Token wurde erfolgreich erstellt." }}
+            </p>
+          </div>
+        </div>
+        <div class="mt-6 space-y-4 text-sm text-slate-600">
+          <p>
+            Ihr neues Zugriffstoken wurde heruntergeladen. Bitte bewahren Sie die Datei an einem sicheren Ort auf, da sie
+            vertrauliche Informationen enthält.
+          </p>
+          <p>
+            Sollten Sie den Download erneut benötigen, können Sie jederzeit ein weiteres Token anfordern. Das bisherige
+            Token bleibt gültig, bis es ersetzt wird.
+          </p>
+        </div>
+        <div class="mt-8 flex justify-end">
+          <button
+            ref="closeButtonRef"
+            type="button"
+            class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            @click="closeModal"
+          >
+            Schließen
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useAuthStore } from "../stores/auth";
 
 const TOKEN_DOWNLOAD_FILENAME = "token.txt";
@@ -74,8 +121,85 @@ const auth = useAuthStore();
 const token = ref("");
 const fileError = ref<string | null>(null);
 const downloadError = ref<string | null>(null);
+const showTokenModal = ref(false);
+const modalRef = ref<HTMLDivElement | null>(null);
+const closeButtonRef = ref<HTMLButtonElement | null>(null);
+const previouslyFocusedElement = ref<HTMLElement | null>(null);
+
+const modalTitleId = "token-modal-title";
+const modalDescriptionId = "token-modal-description";
 
 const errorMessage = computed(() => auth.error);
+
+function openModal(): void {
+  previouslyFocusedElement.value = document.activeElement as HTMLElement | null;
+  showTokenModal.value = true;
+
+  nextTick(() => {
+    if (closeButtonRef.value) {
+      closeButtonRef.value.focus();
+    }
+  });
+}
+
+function closeModal(): void {
+  showTokenModal.value = false;
+
+  nextTick(() => {
+    previouslyFocusedElement.value?.focus();
+    previouslyFocusedElement.value = null;
+  });
+}
+
+function onModalKeydown(event: KeyboardEvent): void {
+  if (!showTokenModal.value) {
+    return;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeModal();
+    return;
+  }
+
+  if (event.key !== "Tab") {
+    return;
+  }
+
+  const focusableElements = modalRef.value?.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+  );
+
+  if (!focusableElements || focusableElements.length === 0) {
+    return;
+  }
+
+  const focusable = Array.from(focusableElements).filter((element) => !element.hasAttribute("disabled"));
+
+  if (focusable.length === 0) {
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const isShiftPressed = event.shiftKey;
+  const activeElement = document.activeElement as HTMLElement | null;
+
+  if (!activeElement) {
+    return;
+  }
+
+  if (!isShiftPressed && activeElement === last) {
+    event.preventDefault();
+    first.focus();
+    return;
+  }
+
+  if (isShiftPressed && activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  }
+}
 
 async function onSubmit(): Promise<void> {
   downloadError.value = null;
@@ -115,6 +239,8 @@ async function onRequestToken(): Promise<void> {
           URL.revokeObjectURL(url);
         }
       }
+
+      openModal();
     }
   } catch (error) {
     downloadError.value =
