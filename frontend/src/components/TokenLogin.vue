@@ -55,6 +55,7 @@
           </button>
         </div>
         <p v-if="errorMessage" class="text-sm font-medium text-rose-600">{{ errorMessage }}</p>
+        <p v-if="downloadError" class="text-sm font-medium text-rose-600">{{ downloadError }}</p>
         <p v-if="auth.lastValidation?.message" class="text-sm text-slate-500">
           {{ auth.lastValidation.message }}
         </p>
@@ -67,13 +68,17 @@
 import { computed, ref } from "vue";
 import { useAuthStore } from "../stores/auth";
 
+const TOKEN_DOWNLOAD_FILENAME = "token.txt";
+
 const auth = useAuthStore();
 const token = ref("");
 const fileError = ref<string | null>(null);
+const downloadError = ref<string | null>(null);
 
 const errorMessage = computed(() => auth.error);
 
 async function onSubmit(): Promise<void> {
+  downloadError.value = null;
   try {
     await auth.login(token.value.trim());
   } catch {
@@ -82,11 +87,46 @@ async function onSubmit(): Promise<void> {
 }
 
 async function onRequestToken(): Promise<void> {
-  await auth.requestToken();
+  downloadError.value = null;
+  try {
+    const result = await auth.requestToken();
+
+    if (result?.token) {
+      let url: string | null = null;
+      const link = document.createElement("a");
+
+      try {
+        const blob = new Blob([result.token], { type: "text/plain" });
+        url = URL.createObjectURL(blob);
+        link.href = url;
+        link.download = TOKEN_DOWNLOAD_FILENAME;
+        document.body.appendChild(link);
+        link.click();
+      } catch (error) {
+        downloadError.value =
+          error instanceof Error
+            ? `Token konnte nicht als Datei gespeichert werden: ${error.message}`
+            : "Token konnte nicht als Datei gespeichert werden.";
+      } finally {
+        if (link.parentNode) {
+          link.remove();
+        }
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+      }
+    }
+  } catch (error) {
+    downloadError.value =
+      error instanceof Error
+        ? `Token konnte nicht angefordert werden: ${error.message}`
+        : "Token konnte nicht angefordert werden.";
+  }
 }
 
 function loadTokenFromFile(event: Event): void {
   fileError.value = null;
+  downloadError.value = null;
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
 
