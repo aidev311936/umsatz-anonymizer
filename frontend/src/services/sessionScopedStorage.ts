@@ -1,6 +1,68 @@
 import { computeUnifiedTxHash } from "../transactionHash";
 import { UnifiedTx } from "../types";
 
+const LEGACY_LOCAL_STORAGE_KEYS = [
+  "bank_mappings_v1",
+  "bank_mappings_local_v1",
+  "transactions_unified_v1",
+  "transactions_unified_masked_v1",
+  "anonymization_rules_v1",
+  "display_settings_v1",
+];
+
+let legacyStoragePurged = false;
+
+async function deleteLegacyDatabase(): Promise<void> {
+  if (typeof window === "undefined" || typeof window.indexedDB === "undefined") {
+    return;
+  }
+
+  try {
+    const request = window.indexedDB.deleteDatabase("umsatz_anonymizer");
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+      request.onsuccess = done;
+      request.onblocked = done;
+      request.onerror = () => {
+        console.warn("Failed to delete legacy IndexedDB database", request.error);
+        done();
+      };
+    });
+  } catch (error) {
+    console.warn("Failed to delete legacy IndexedDB database", error);
+  }
+}
+
+function removeLegacyLocalStorage(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+  } catch (error) {
+    console.warn("Failed to remove legacy Local Storage entries", error);
+  }
+}
+
+export async function purgeLegacyPersistentStorage(): Promise<void> {
+  if (legacyStoragePurged) {
+    return;
+  }
+  legacyStoragePurged = true;
+
+  await deleteLegacyDatabase();
+  removeLegacyLocalStorage();
+}
+
 export type StoredTransaction = UnifiedTx & { hash: string };
 
 type PrepareEntries = (entries: UnifiedTx[], source?: UnifiedTx[]) => Promise<StoredTransaction[]>;
