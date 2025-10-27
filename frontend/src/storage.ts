@@ -10,6 +10,7 @@ import { computeUnifiedTxHash } from "./transactionHash";
 import { getApiBaseUrl } from "./apiBase";
 import {
   maskedTransactionsSessionStorage,
+  purgeLegacyPersistentStorage,
   rawTransactionsSessionStorage,
   sessionScopedGetItem,
   sessionScopedRemoveItem,
@@ -101,6 +102,7 @@ export async function initializeStorage(): Promise<void> {
   }
   if (!initializationPromise) {
     initializationPromise = (async () => {
+      await purgeLegacyPersistentStorage();
       const [
         settings,
         mappings,
