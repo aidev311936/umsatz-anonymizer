@@ -79,29 +79,41 @@
         <div class="flex items-start justify-between">
           <div>
             <h2 :id="modalTitleId" class="text-xl font-semibold text-slate-900">
-              {{ modalContext === "token" ? "Willkommen zurück!" : "Erfolgreich angemeldet" }}
+              {{ modalContext === "login" ? "Willkommen zurück!" : "Neues Token erstellt" }}
             </h2>
             <p :id="modalDescriptionId" class="mt-2 text-sm text-slate-600">
               {{
-                modalContext === "token"
-                  ? auth.lastValidation?.message ?? "Ihr neues Token wurde erfolgreich erstellt."
-                  : auth.lastValidation?.message ?? "Sie haben sich erfolgreich angemeldet."
+                modalContext === "login"
+                  ? auth.lastValidation?.message ?? "Sie haben sich erfolgreich angemeldet."
+                  : auth.lastValidation?.message ??
+                      "Ihr neues Token steht bereit. Folgen Sie den nächsten Schritten, um es sicher zu speichern."
               }}
             </p>
           </div>
         </div>
-        <div v-if="modalContext === 'token'" class="mt-6 space-y-4 text-sm text-slate-600">
-          <p>
-            Ihr neues Zugriffstoken wurde heruntergeladen. Bitte bewahren Sie die Datei an einem sicheren Ort auf, da sie
-            vertrauliche Informationen enthält.
-          </p>
-          <p>
-            Sollten Sie den Download erneut benötigen, können Sie jederzeit ein weiteres Token anfordern. Das bisherige
-            Token bleibt gültig, bis es ersetzt wird.
-          </p>
+        <div v-if="modalContext === 'login'" class="mt-6 space-y-4 text-sm text-slate-600">
+          <p>Schön, dass Sie wieder da sind! Sie können die Anwendung jetzt wie gewohnt verwenden.</p>
         </div>
         <div v-else class="mt-6 space-y-4 text-sm text-slate-600">
-          <p>Sie können die Anwendung jetzt verwenden.</p>
+          <p>
+            Laden Sie Ihr neues Zugriffstoken als Datei herunter und bewahren Sie es an einem sicheren Ort auf. Das Token
+            wird benötigt, um sich künftig anzumelden.
+          </p>
+          <p>
+            Sollten Sie das Token verlieren, können Sie jederzeit ein neues anfordern. Beachten Sie, dass das bisherige
+            Token gültig bleibt, bis es durch ein neues ersetzt wird.
+          </p>
+          <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+              :disabled="!requestedToken"
+              @click="downloadRequestedToken"
+            >
+              Token herunterladen
+            </button>
+            <p v-if="downloadError" class="text-sm font-medium text-rose-600">{{ downloadError }}</p>
+          </div>
         </div>
         <div class="mt-8 flex justify-end">
           <button
@@ -130,6 +142,7 @@ const fileError = ref<string | null>(null);
 const downloadError = ref<string | null>(null);
 const showTokenModal = ref(false);
 const modalContext = ref<"login" | "token">("login");
+const requestedToken = ref<string | null>(null);
 const modalRef = ref<HTMLDivElement | null>(null);
 const closeButtonRef = ref<HTMLButtonElement | null>(null);
 const previouslyFocusedElement = ref<HTMLElement | null>(null);
@@ -153,6 +166,9 @@ function openModal(context: "login" | "token" = "login"): void {
 
 function closeModal(): void {
   showTokenModal.value = false;
+  if (modalContext.value === "token") {
+    requestedToken.value = null;
+  }
 
   nextTick(() => {
     previouslyFocusedElement.value?.focus();
@@ -226,41 +242,47 @@ async function onRequestToken(): Promise<void> {
     const result = await auth.requestToken();
 
     if (result?.token) {
-      let url: string | null = null;
-      const link = document.createElement("a");
-      let downloadSucceeded = false;
-
-      try {
-        const blob = new Blob([result.token], { type: "text/plain" });
-        url = URL.createObjectURL(blob);
-        link.href = url;
-        link.download = TOKEN_DOWNLOAD_FILENAME;
-        document.body.appendChild(link);
-        link.click();
-        downloadSucceeded = true;
-      } catch (error) {
-        downloadError.value =
-          error instanceof Error
-            ? `Token konnte nicht als Datei gespeichert werden: ${error.message}`
-            : "Token konnte nicht als Datei gespeichert werden.";
-      } finally {
-        if (link.parentNode) {
-          link.remove();
-        }
-        if (url) {
-          URL.revokeObjectURL(url);
-        }
-      }
-
-      if (downloadSucceeded) {
-        openModal("token");
-      }
+      requestedToken.value = result.token;
+      openModal("token");
     }
   } catch (error) {
     downloadError.value =
       error instanceof Error
         ? `Token konnte nicht angefordert werden: ${error.message}`
         : "Token konnte nicht angefordert werden.";
+  }
+}
+
+function downloadRequestedToken(): void {
+  downloadError.value = null;
+
+  if (!requestedToken.value) {
+    downloadError.value = "Es ist kein Token zum Herunterladen vorhanden.";
+    return;
+  }
+
+  let url: string | null = null;
+  const link = document.createElement("a");
+
+  try {
+    const blob = new Blob([requestedToken.value], { type: "text/plain" });
+    url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = TOKEN_DOWNLOAD_FILENAME;
+    document.body.appendChild(link);
+    link.click();
+  } catch (error) {
+    downloadError.value =
+      error instanceof Error
+        ? `Token konnte nicht als Datei gespeichert werden: ${error.message}`
+        : "Token konnte nicht als Datei gespeichert werden.";
+  } finally {
+    if (link.parentNode) {
+      link.remove();
+    }
+    if (url) {
+      URL.revokeObjectURL(url);
+    }
   }
 }
 
