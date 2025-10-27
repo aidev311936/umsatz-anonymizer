@@ -10,8 +10,8 @@ const RAW_HASH_INDEX = "hash";
 type StoreName = typeof RAW_STORE | typeof MASKED_STORE;
 
 interface IndexedDbSnapshot {
-  rawTransactions: UnifiedTx[];
-  maskedTransactions: UnifiedTx[];
+  rawTransactions: StoredTransaction[];
+  maskedTransactions: StoredTransaction[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -108,18 +108,34 @@ function requestAsPromise<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-function getAllFromStore(storeName: StoreName): Promise<UnifiedTx[]> {
+function getAllFromStore(storeName: StoreName): Promise<StoredTransaction[]> {
   return openDatabase().then(
     (database) =>
       new Promise((resolve, reject) => {
         const transaction = database.transaction(storeName, "readonly");
         const store = transaction.objectStore(storeName);
         const request = store.getAll();
-        request.onsuccess = () => {
+        request.onsuccess = async () => {
           const result = Array.isArray(request.result)
             ? (request.result as (UnifiedTx | StoredTransaction)[])
             : [];
-          resolve(result.map(cloneUnifiedTx));
+          try {
+            const prepared = await Promise.all(
+              result.map(async (entry) => {
+                const unified = cloneUnifiedTx(entry);
+                const hash =
+                  typeof (entry as StoredTransaction).hash === "string" &&
+                  (entry as StoredTransaction).hash.length > 0
+                    ? (entry as StoredTransaction).hash
+                    : await computeUnifiedTxHash(unified);
+                unified.booking_hash = hash;
+                return { ...unified, hash } satisfies StoredTransaction;
+              }),
+            );
+            resolve(prepared);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
         };
         request.onerror = () => {
           reject(request.error ?? new Error("Failed to read from IndexedDB."));
@@ -204,6 +220,10 @@ function cloneUnifiedTx(tx: UnifiedTx): UnifiedTx {
     booking_text: tx.booking_text,
     booking_type: tx.booking_type,
     booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
+    booking_hash:
+      typeof (tx as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string"
+        ? (tx as UnifiedTx & { booking_hash?: string }).booking_hash
+        : undefined,
   };
 }
 
@@ -215,7 +235,12 @@ async function prepareStoredTransactions(entries: UnifiedTx[]): Promise<StoredTr
   const prepared = await Promise.all(
     entries.map(async (entry) => {
       const unified = cloneUnifiedTx(entry);
-      const hash = await computeUnifiedTxHash(unified);
+      const hash =
+        typeof (entry as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string" &&
+        (entry as UnifiedTx & { booking_hash?: string }).booking_hash.length > 0
+          ? (entry as UnifiedTx & { booking_hash?: string }).booking_hash
+          : await computeUnifiedTxHash(unified);
+      unified.booking_hash = hash;
       return { ...unified, hash } satisfies StoredTransaction;
     }),
   );
@@ -233,7 +258,17 @@ function transactionLinkKey(entry: UnifiedTx): string {
 }
 
 async function buildHashQueues(source: UnifiedTx[]): Promise<Map<string, string[]>> {
-  const hashes = await Promise.all(source.map((entry) => computeUnifiedTxHash(entry)));
+  const hashes = await Promise.all(
+    source.map((entry) => {
+      if (
+        typeof (entry as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string" &&
+        (entry as UnifiedTx & { booking_hash?: string }).booking_hash.length > 0
+      ) {
+        return Promise.resolve((entry as UnifiedTx & { booking_hash?: string }).booking_hash);
+      }
+      return computeUnifiedTxHash(entry);
+    }),
+  );
   const queues = new Map<string, string[]>();
   hashes.forEach((hash, index) => {
     const key = transactionLinkKey(source[index]);
@@ -268,13 +303,20 @@ async function prepareMaskedStoredTransactions(
   const prepared: StoredTransaction[] = [];
   for (const entry of entries) {
     const unified = cloneUnifiedTx(entry);
-    let hash: string | null = null;
-    if (sourceQueues) {
+    let hash: string | null =
+      typeof (entry as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string" &&
+      (entry as UnifiedTx & { booking_hash?: string }).booking_hash.length > 0
+        ? (entry as UnifiedTx & { booking_hash?: string }).booking_hash
+        : typeof (entry as StoredTransaction).hash === "string"
+        ? (entry as StoredTransaction).hash
+        : null;
+    if (!hash && sourceQueues) {
       hash = takeHashForEntry(sourceQueues, unified);
     }
     if (!hash) {
       hash = await computeUnifiedTxHash(unified);
     }
+    unified.booking_hash = hash;
     prepared.push({ ...unified, hash });
   }
   return prepared;
@@ -328,7 +370,9 @@ export async function addRawTransactionIfMissing(
           return;
         }
         try {
-          const addRequest = track(store.add({ ...cloneUnifiedTx(entry), hash }, hash));
+          const unified = cloneUnifiedTx(entry);
+          unified.booking_hash = hash;
+          const addRequest = track(store.add({ ...unified, hash }, hash));
           if (addRequest) {
             addRequest.onsuccess = () => {
               added = true;
@@ -393,6 +437,7 @@ export function loadMaskedTransactionsSnapshot(): Promise<StoredTransaction[]> {
                   typeof (entry as StoredTransaction).hash === "string"
                     ? (entry as StoredTransaction).hash
                     : await computeUnifiedTxHash(unified);
+                unified.booking_hash = hash;
                 return { ...unified, hash } satisfies StoredTransaction;
               }),
             );
