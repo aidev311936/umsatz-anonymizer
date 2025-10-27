@@ -98,6 +98,10 @@ function cloneUnifiedTx(tx: UnifiedTx): UnifiedTx {
   };
 }
 
+// Builds a deterministic key we can reuse to map source transactions to their
+// masked counterparts. The resulting string is only used internally to group
+// items that share the same identifying fields so we can keep reusing the hash
+// that was already computed for a matching source entry.
 function transactionLinkKey(entry: UnifiedTx): string {
   return [
     entry.bank_name,
