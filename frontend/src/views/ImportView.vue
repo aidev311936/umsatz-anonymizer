@@ -122,7 +122,16 @@
         </span>
       </div>
     </section>
-    <ImportProgressDialog :visible="showProgress" :progress="progress" />
+    <ImportProgressDialog
+      :visible="showProgress"
+      :progress="progress"
+      :closable="dialogClosable"
+      @close="handleProgressClose"
+    >
+      <p v-if="importSummary" class="mt-4 text-sm text-slate-600">
+        {{ importSummary }}
+      </p>
+    </ImportProgressDialog>
   </div>
 </template>
 
@@ -146,6 +155,7 @@ const transactionsStore = useTransactionsStore();
 const showProgress = ref(false);
 const progress = ref(0);
 const importSummary = ref("");
+const dialogClosable = ref(false);
 
 const mapping = reactive<{ value: MappingSelection | null }>({ value: importStore.mapping });
 
@@ -238,7 +248,9 @@ async function startImport(): Promise<void> {
     return;
   }
   showProgress.value = true;
+  dialogClosable.value = false;
   progress.value = 20;
+  importSummary.value = "";
   try {
     const transactions = importStore.importTransactions(displaySettingsStore.resolvedSettings);
     progress.value = 60;
@@ -250,11 +262,16 @@ async function startImport(): Promise<void> {
     importSummary.value = `${transactions.length} Transaktionen importiert.`;
   } catch (error) {
     console.error("Import failed", error);
+    progress.value = 100;
+    importSummary.value = "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
   } finally {
-    setTimeout(() => {
-      showProgress.value = false;
-      progress.value = 0;
-    }, 400);
+    dialogClosable.value = true;
   }
+}
+
+function handleProgressClose(): void {
+  showProgress.value = false;
+  progress.value = 0;
+  dialogClosable.value = false;
 }
 </script>
