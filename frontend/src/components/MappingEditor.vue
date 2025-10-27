@@ -9,10 +9,16 @@
         :id="field.key"
         multiple
         class="mt-4 h-40 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        :value="selections[field.key]"
         @change="onSelectionChange(field.key, $event)"
       >
-        <option v-for="header in headers" :key="header" :value="header">{{ header }}</option>
+        <option
+          v-for="header in headers"
+          :key="header"
+          :value="header"
+          :selected="selections[field.key].includes(header)"
+        >
+          {{ header }}
+        </option>
       </select>
       <p class="mt-2 text-xs text-slate-500">
         Mehrere Spalten auswählen, um sie zu kombinieren. Die Reihenfolge entspricht der Auswahlreihenfolge.
@@ -95,7 +101,10 @@ function emitUpdated(patch: Partial<MappingSelection>): void {
 function onSelectionChange(field: SelectionField, event: Event): void {
   const target = event.target as HTMLSelectElement;
   const selected = Array.from(target.selectedOptions).map((option) => option.value);
-  selections[field] = selected;
-  emitUpdated({ [field]: selected } as Partial<MappingSelection>);
+  const preserved = selections[field].filter((value) => selected.includes(value));
+  const newlySelected = selected.filter((value) => !preserved.includes(value));
+  const ordered = [...preserved, ...newlySelected];
+  selections[field] = ordered;
+  emitUpdated({ [field]: ordered } as Partial<MappingSelection>);
 }
 </script>

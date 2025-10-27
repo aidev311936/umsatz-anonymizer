@@ -88,14 +88,20 @@ const formMapping = reactive<MappingSelection>({
   booking_date_parse_format: "",
 });
 
+const selectableFields = ["booking_date", "booking_text", "booking_type", "booking_amount"] as const;
+
 const allHeaders = computed(() => {
   const entries = new Set<string>();
-  bankMappingsStore.mappings.forEach((mapping) => {
-    mapping.booking_date.forEach((header) => entries.add(header));
-    mapping.booking_text.forEach((header) => entries.add(header));
-    mapping.booking_type.forEach((header) => entries.add(header));
-    mapping.booking_amount.forEach((header) => entries.add(header));
+  selectableFields.forEach((field) => {
+    formMapping[field].forEach((header) => entries.add(header));
   });
+
+  bankMappingsStore.mappings.forEach((mapping) => {
+    selectableFields.forEach((field) => {
+      mapping[field].forEach((header) => entries.add(header));
+    });
+  });
+
   return Array.from(entries);
 });
 
