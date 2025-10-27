@@ -91,20 +91,26 @@ const formMapping = reactive<MappingSelection>({
 const selectableFields = ["booking_date", "booking_text", "booking_type", "booking_amount"] as const;
 
 const allHeaders = computed(() => {
-  const entries = new Set<string>();
+  const entries: string[] = [];
+
+  const addUnique = (value: string) => {
+    if (!entries.includes(value)) {
+      entries.push(value);
+    }
+  };
 
   selectableFields.forEach((field) => {
-    formMapping[field].forEach((header) => entries.add(header));
+    formMapping[field].forEach((header) => addUnique(header));
   });
 
   const mapping = selectedBank.value ? bankMappingsStore.mappingByBank(selectedBank.value) : undefined;
   if (mapping) {
     selectableFields.forEach((field) => {
-      mapping[field].forEach((header) => entries.add(header));
+      mapping[field].forEach((header) => addUnique(header));
     });
   }
 
-  return Array.from(entries);
+  return entries;
 });
 
 function selectMapping(bank: string): void {

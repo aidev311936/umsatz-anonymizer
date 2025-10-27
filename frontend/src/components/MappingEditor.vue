@@ -20,9 +20,23 @@
           {{ header }}
         </option>
       </select>
-      <p class="mt-2 text-xs text-slate-500">
-        Mehrere Spalten auswählen, um sie zu kombinieren. Die Reihenfolge entspricht der Auswahlreihenfolge.
-      </p>
+      <div class="mt-2 text-xs text-slate-500">
+        <template v-if="selections[field.key].length === 0">
+          Mehrere Spalten auswählen, um sie zu kombinieren.
+        </template>
+        <template v-else>
+          <span class="font-medium text-slate-600">Auswahlreihenfolge:</span>
+          <ul class="mt-1 flex flex-wrap gap-1">
+            <li
+              v-for="(value, index) in selections[field.key]"
+              :key="`${value}-${index}`"
+              class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700"
+            >
+              {{ index + 1 }}. {{ value }}
+            </li>
+          </ul>
+        </template>
+      </div>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <label for="booking-date-parse" class="block text-sm font-semibold text-slate-900">
