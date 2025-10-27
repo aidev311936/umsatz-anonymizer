@@ -125,6 +125,9 @@ export const useTransactionsStore = defineStore("transactions", {
         await appendImportedTransactions(entries, options);
         this.transactions = [...getTransactions()];
         this.history = [...getTransactionImports()];
+        this.clearAnonymization();
+        this.setMaskedTransactions([]);
+        await storeMaskedTransactions([]);
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Import konnte nicht gespeichert werden";
         throw error;
