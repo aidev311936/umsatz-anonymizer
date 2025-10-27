@@ -11,6 +11,9 @@ import { getApiBaseUrl } from "./apiBase";
 import {
   maskedTransactionsSessionStorage,
   rawTransactionsSessionStorage,
+  sessionScopedGetItem,
+  sessionScopedRemoveItem,
+  sessionScopedSetItem,
   type StoredTransaction,
 } from "./services/sessionScopedStorage";
 
@@ -236,7 +239,7 @@ function setBankMappingsCacheFromSources(): void {
 }
 
 function loadLocalBankMappings(): BankMapping[] {
-  const parsed = safeParse<unknown>(localStorage.getItem(LOCAL_BANK_MAPPINGS_KEY));
+  const parsed = safeParse<unknown>(sessionScopedGetItem(LOCAL_BANK_MAPPINGS_KEY));
   if (!Array.isArray(parsed)) {
     return [];
   }
@@ -249,10 +252,10 @@ function loadLocalBankMappings(): BankMapping[] {
 function persistLocalBankMappings(mappings: BankMapping[]): void {
   const sanitized = mappings.map(sanitizeBankMapping);
   if (sanitized.length === 0) {
-    localStorage.removeItem(LOCAL_BANK_MAPPINGS_KEY);
+    sessionScopedRemoveItem(LOCAL_BANK_MAPPINGS_KEY);
     return;
   }
-  localStorage.setItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+  sessionScopedSetItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
 }
 
 function toTransactionImportSummary(value: unknown): TransactionImportSummary | null {
@@ -707,7 +710,7 @@ function sanitizeRule(rule: AnonRule): AnonRule {
 }
 
 export function loadAnonymizationRules(): { rules: AnonRule[]; version: number } {
-  const parsed = safeParse<unknown>(localStorage.getItem(ANON_RULES_KEY));
+  const parsed = safeParse<unknown>(sessionScopedGetItem(ANON_RULES_KEY));
   if (
     parsed &&
     typeof parsed === "object" &&
@@ -722,7 +725,7 @@ export function loadAnonymizationRules(): { rules: AnonRule[]; version: number }
         : CURRENT_RULE_VERSION;
     return { rules, version };
   }
-  localStorage.setItem(ANON_RULES_KEY, JSON.stringify(DEFAULT_RULES, null, 2));
+  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(DEFAULT_RULES, null, 2));
   return DEFAULT_RULES;
 }
 
@@ -731,7 +734,7 @@ export function saveAnonymizationRules(rules: AnonRule[]): void {
     version: CURRENT_RULE_VERSION,
     rules: rules.map(sanitizeRule),
   };
-  localStorage.setItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
+  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
 }
 
 export function importAnonymizationRules(
@@ -740,7 +743,7 @@ export function importAnonymizationRules(
   if (Array.isArray(raw)) {
     const rules = raw.filter(isAnonRule).map(sanitizeRule);
     const payload = { version: CURRENT_RULE_VERSION, rules };
-    localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+    sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
     return payload;
   }
 
@@ -750,7 +753,7 @@ export function importAnonymizationRules(
       const rules = maybe.rules.filter(isAnonRule).map(sanitizeRule);
       const version = typeof maybe.version === "number" ? maybe.version : CURRENT_RULE_VERSION;
       const payload = { version, rules };
-      localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+      sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
       return payload;
     }
   }
@@ -782,15 +785,17 @@ export function clearPersistentData(): void {
     ]),
     "clearSessionStorage",
   );
-  const keys = [
+  const sessionScopedKeys = [LOCAL_BANK_MAPPINGS_KEY, ANON_RULES_KEY];
+  for (const key of sessionScopedKeys) {
+    sessionScopedRemoveItem(key);
+  }
+  const persistentKeys = [
     BANK_MAPPINGS_KEY,
-    LOCAL_BANK_MAPPINGS_KEY,
     TRANSACTIONS_KEY,
     TRANSACTIONS_MASKED_KEY,
-    ANON_RULES_KEY,
     DISPLAY_SETTINGS_KEY,
   ];
-  for (const key of keys) {
+  for (const key of persistentKeys) {
     localStorage.removeItem(key);
   }
 }

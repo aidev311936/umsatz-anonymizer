@@ -56,6 +56,18 @@ function getBackend(): StorageBackend {
   return backend;
 }
 
+export function sessionScopedGetItem(key: string): string | null {
+  return getBackend().getItem(key);
+}
+
+export function sessionScopedSetItem(key: string, value: string): void {
+  getBackend().setItem(key, value);
+}
+
+export function sessionScopedRemoveItem(key: string): void {
+  getBackend().removeItem(key);
+}
+
 function getIndexKey(storeName: string): string {
   return `${storeName}:index`;
 }
