@@ -68,6 +68,22 @@ export function sessionScopedRemoveItem(key: string): void {
   getBackend().removeItem(key);
 }
 
+export function clearAllSessionScopedStorage(): void {
+  memoryFallback.clear();
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.clear();
+  } catch (error) {
+    if (!usingMemoryFallback) {
+      console.warn("Failed to clear session storage", error);
+    }
+  }
+}
+
 function getIndexKey(storeName: string): string {
   return `${storeName}:index`;
 }
@@ -310,4 +326,8 @@ export const maskedTransactionsSessionStorage = createSessionScopedStore(
 export function __isUsingSessionStorageFallbackForTests(): boolean {
   return usingMemoryFallback;
 }
+
+export const sessionScopedStorageAdapter = {
+  clearAll: clearAllSessionScopedStorage,
+};
 
