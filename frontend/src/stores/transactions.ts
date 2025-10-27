@@ -106,8 +106,8 @@ export const useTransactionsStore = defineStore("transactions", {
         this.saving = false;
       }
     },
-    anonymize(rules: Parameters<typeof anonymizeTransactions>[1]): void {
-      const result = anonymizeTransactions(this.transactions, rules);
+    async anonymize(rules: Parameters<typeof anonymizeTransactions>[1]): Promise<void> {
+      const result = await anonymizeTransactions(this.transactions, rules);
       this.anonymized = result.data;
       this.anonymizationWarnings = result.warnings;
     },

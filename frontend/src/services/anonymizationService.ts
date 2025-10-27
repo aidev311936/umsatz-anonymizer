@@ -6,11 +6,11 @@ export interface AnonymizationSummary {
   data: UnifiedTx[];
 }
 
-export function anonymizeTransactions(
+export async function anonymizeTransactions(
   transactions: UnifiedTx[],
   rules: AnonRule[],
-): AnonymizationSummary {
-  const result = applyAnonymization(transactions, rules);
+): Promise<AnonymizationSummary> {
+  const result = await applyAnonymization(transactions, rules);
   return {
     warnings: result.warnings,
     data: result.data,

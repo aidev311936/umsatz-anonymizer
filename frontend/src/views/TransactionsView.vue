@@ -96,8 +96,8 @@ const downloadData = computed(() => {
   return [];
 });
 
-function onAnonymize(): void {
-  transactionsStore.anonymize(rulesStore.rules);
+async function onAnonymize(): Promise<void> {
+  await transactionsStore.anonymize(rulesStore.rules);
   transactionsStore.setMaskedTransactions([...transactionsStore.anonymized]);
 }
 

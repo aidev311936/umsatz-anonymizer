@@ -408,6 +408,7 @@ function toUnifiedTx(value: unknown): UnifiedTx | null {
     booking_type?: unknown;
     booking_amount?: unknown;
     booking_account?: unknown;
+    booking_hash?: unknown;
   };
   if (
     typeof maybe.bank_name !== "string" ||
@@ -442,7 +443,19 @@ function toUnifiedTx(value: unknown): UnifiedTx | null {
     booking_amount: maybe.booking_amount,
     booking_account:
       typeof maybe.booking_account === "string" ? maybe.booking_account : "",
+    booking_hash: typeof maybe.booking_hash === "string" ? maybe.booking_hash : undefined,
   };
+}
+
+function extractHash(tx: UnifiedTx): string | undefined {
+  const withHash = tx as UnifiedTx & { hash?: unknown };
+  if (typeof withHash.booking_hash === "string" && withHash.booking_hash.length > 0) {
+    return withHash.booking_hash;
+  }
+  if (typeof withHash.hash === "string" && withHash.hash.length > 0) {
+    return withHash.hash;
+  }
+  return undefined;
 }
 
 function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
@@ -452,6 +465,7 @@ function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
     const time = Date.parse(iso);
     normalizedIso = Number.isNaN(time) ? null : iso;
   }
+  const bookingHash = extractHash(tx);
   return {
     bank_name: tx.bank_name,
     booking_date: tx.booking_date,
@@ -461,6 +475,7 @@ function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
     booking_type: tx.booking_type,
     booking_amount: tx.booking_amount,
     booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
+    ...(bookingHash ? { booking_hash: bookingHash } : {}),
   };
 }
 
@@ -552,7 +567,7 @@ export async function appendTransactions(
     const hash = await computeUnifiedTxHash(entry);
     const added = await addRawTransactionIfMissing(entry, hash);
     if (added) {
-      uniqueEntries.push(entry);
+      uniqueEntries.push({ ...entry, booking_hash: hash });
     } else {
       skippedDuplicates += 1;
     }

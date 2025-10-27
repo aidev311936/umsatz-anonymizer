@@ -95,6 +95,10 @@ function cloneUnifiedTx(tx: UnifiedTx): UnifiedTx {
     booking_text: tx.booking_text,
     booking_type: tx.booking_type,
     booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
+    booking_hash:
+      typeof (tx as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string"
+        ? (tx as UnifiedTx & { booking_hash?: string }).booking_hash
+        : undefined,
   };
 }
 
@@ -117,7 +121,12 @@ async function prepareStoredTransactions(entries: UnifiedTx[]): Promise<StoredTr
   const seen = new Set<string>();
   for (const entry of entries) {
     const unified = cloneUnifiedTx(entry);
-    const hash = await computeUnifiedTxHash(unified);
+    const hash =
+      typeof (entry as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string" &&
+      (entry as UnifiedTx & { booking_hash?: string }).booking_hash.length > 0
+        ? (entry as UnifiedTx & { booking_hash?: string }).booking_hash
+        : await computeUnifiedTxHash(unified);
+    unified.booking_hash = hash;
     if (seen.has(hash)) {
       continue;
     }
@@ -128,7 +137,17 @@ async function prepareStoredTransactions(entries: UnifiedTx[]): Promise<StoredTr
 }
 
 async function buildHashQueues(source: UnifiedTx[]): Promise<Map<string, string[]>> {
-  const hashes = await Promise.all(source.map((entry) => computeUnifiedTxHash(entry)));
+  const hashes = await Promise.all(
+    source.map((entry) => {
+      if (
+        typeof (entry as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string" &&
+        (entry as UnifiedTx & { booking_hash?: string }).booking_hash.length > 0
+      ) {
+        return Promise.resolve((entry as UnifiedTx & { booking_hash?: string }).booking_hash);
+      }
+      return computeUnifiedTxHash(entry);
+    }),
+  );
   const queues = new Map<string, string[]>();
   hashes.forEach((hash, index) => {
     const key = transactionLinkKey(source[index]);
@@ -164,13 +183,18 @@ async function prepareMaskedStoredTransactions(
   const seen = new Set<string>();
   for (const entry of entries) {
     const unified = cloneUnifiedTx(entry);
-    let hash: string | null = null;
-    if (sourceQueues) {
+    let hash: string | null =
+      typeof (entry as UnifiedTx & { booking_hash?: unknown }).booking_hash === "string" &&
+      (entry as UnifiedTx & { booking_hash?: string }).booking_hash.length > 0
+        ? (entry as UnifiedTx & { booking_hash?: string }).booking_hash
+        : null;
+    if (!hash && sourceQueues) {
       hash = takeHashForEntry(sourceQueues, unified);
     }
     if (!hash) {
       hash = await computeUnifiedTxHash(unified);
     }
+    unified.booking_hash = hash;
     if (seen.has(hash)) {
       continue;
     }
@@ -246,6 +270,7 @@ function createSessionScopedStore(
     async addIfMissing(entry: UnifiedTx): Promise<boolean> {
       const unified = cloneUnifiedTx(entry);
       const hash = await computeUnifiedTxHash(unified);
+      unified.booking_hash = hash;
       const backendInstance = getBackend();
       const key = getEntryKey(storeName, hash);
       if (backendInstance.getItem(key) !== null) {

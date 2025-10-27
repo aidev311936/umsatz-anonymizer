@@ -1,4 +1,5 @@
 import { AnonRule, UnifiedTx } from "./types";
+import { computeUnifiedTxHash } from "./transactionHash";
 
 type CompiledRule =
   | ({ type: "regex"; regex: RegExp; replacement: string } & Omit<Extract<AnonRule, { type: "regex" }>, "pattern" | "flags" | "replacement">)
@@ -109,9 +110,20 @@ export function compileRules(rules: AnonRule[]): { compiled: CompiledRule[]; war
   return { compiled, warnings };
 }
 
-export function applyAnonymization(transactions: UnifiedTx[], rules: AnonRule[]): AnonymizationResult {
+export async function applyAnonymization(
+  transactions: UnifiedTx[],
+  rules: AnonRule[],
+): Promise<AnonymizationResult> {
   const { compiled, warnings } = compileRules(rules);
-  const anonymized = transactions.map((tx) => ({ ...tx }));
+  const anonymized = await Promise.all(
+    transactions.map(async (tx) => {
+      const clone: UnifiedTx = { ...tx };
+      if (typeof clone.booking_hash !== "string" || clone.booking_hash.length === 0) {
+        clone.booking_hash = await computeUnifiedTxHash(clone);
+      }
+      return clone;
+    }),
+  );
 
   compiled.forEach((rule) => {
     anonymized.forEach((entry) => {
