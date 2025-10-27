@@ -14,17 +14,17 @@ export function startSession(): Cleanup {
     return () => {};
   }
 
-  let hasTerminated = false;
+  let isTerminating = false;
   const channel =
     typeof BroadcastChannel !== "undefined"
       ? new BroadcastChannel(SESSION_CHANNEL_NAME)
       : null;
 
   const handleTermination: TerminationHandler = () => {
-    if (hasTerminated) {
+    if (isTerminating) {
       return;
     }
-    hasTerminated = true;
+    isTerminating = true;
     sessionScopedStorageAdapter.clearAll();
     channel?.postMessage(SESSION_TERMINATED_MESSAGE);
   };
@@ -34,7 +34,6 @@ export function startSession(): Cleanup {
       return;
     }
     if (event.data === SESSION_TERMINATED_MESSAGE) {
-      hasTerminated = true;
       sessionScopedStorageAdapter.clearAll();
     }
   };
