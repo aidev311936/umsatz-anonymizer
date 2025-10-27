@@ -87,12 +87,13 @@ export const useAuthStore = defineStore("auth", {
         this.loading = false;
       }
     },
-    async requestToken(): Promise<TokenValidationResult | null> {
+    async requestToken(options: { autoAuthenticate?: boolean } = {}): Promise<TokenValidationResult | null> {
       this.loading = true;
       this.error = null;
       try {
         const result = await requestNewToken();
-        if (result.token) {
+        const shouldAutoAuthenticate = options.autoAuthenticate ?? true;
+        if (result.token && shouldAutoAuthenticate) {
           this.token = result.token;
         }
         this.lastValidation = result;
@@ -103,6 +104,9 @@ export const useAuthStore = defineStore("auth", {
       } finally {
         this.loading = false;
       }
+    },
+    applyToken(token: string): void {
+      this.token = token;
     },
     clearError(): void {
       this.error = null;
