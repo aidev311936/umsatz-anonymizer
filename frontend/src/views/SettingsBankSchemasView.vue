@@ -95,13 +95,13 @@ const allHeaders = computed(() => {
   selectableFields.forEach((field) => {
     formMapping[field].forEach((header) => entries.add(header));
   });
-  if (entries.size === 0) {
-    bankMappingsStore.mappings.forEach((mapping) => {
-      selectableFields.forEach((field) => {
-        mapping[field].forEach((header) => entries.add(header));
-      });
+
+  bankMappingsStore.mappings.forEach((mapping) => {
+    selectableFields.forEach((field) => {
+      mapping[field].forEach((header) => entries.add(header));
     });
-  }
+  });
+
   return Array.from(entries);
 });
 
