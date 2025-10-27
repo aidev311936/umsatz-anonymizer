@@ -165,7 +165,14 @@ function openModal(context: "login" | "token" = "login"): void {
 }
 
 function closeModal(): void {
+  const tokenToApply = modalContext.value === "token" ? requestedToken.value : null;
+
   showTokenModal.value = false;
+
+  if (tokenToApply) {
+    auth.applyToken(tokenToApply);
+  }
+
   if (modalContext.value === "token") {
     requestedToken.value = null;
   }
@@ -239,7 +246,7 @@ async function onSubmit(): Promise<void> {
 async function onRequestToken(): Promise<void> {
   downloadError.value = null;
   try {
-    const result = await auth.requestToken();
+    const result = await auth.requestToken({ autoAuthenticate: false });
 
     if (result?.token) {
       requestedToken.value = result.token;
