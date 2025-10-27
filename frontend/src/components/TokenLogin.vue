@@ -79,14 +79,18 @@
         <div class="flex items-start justify-between">
           <div>
             <h2 :id="modalTitleId" class="text-xl font-semibold text-slate-900">
-              Willkommen zurück!
+              {{ modalContext === "token" ? "Willkommen zurück!" : "Erfolgreich angemeldet" }}
             </h2>
             <p :id="modalDescriptionId" class="mt-2 text-sm text-slate-600">
-              {{ auth.lastValidation?.message ?? "Ihr neues Token wurde erfolgreich erstellt." }}
+              {{
+                modalContext === "token"
+                  ? auth.lastValidation?.message ?? "Ihr neues Token wurde erfolgreich erstellt."
+                  : auth.lastValidation?.message ?? "Sie haben sich erfolgreich angemeldet."
+              }}
             </p>
           </div>
         </div>
-        <div class="mt-6 space-y-4 text-sm text-slate-600">
+        <div v-if="modalContext === 'token'" class="mt-6 space-y-4 text-sm text-slate-600">
           <p>
             Ihr neues Zugriffstoken wurde heruntergeladen. Bitte bewahren Sie die Datei an einem sicheren Ort auf, da sie
             vertrauliche Informationen enthält.
@@ -95,6 +99,9 @@
             Sollten Sie den Download erneut benötigen, können Sie jederzeit ein weiteres Token anfordern. Das bisherige
             Token bleibt gültig, bis es ersetzt wird.
           </p>
+        </div>
+        <div v-else class="mt-6 space-y-4 text-sm text-slate-600">
+          <p>Sie können die Anwendung jetzt verwenden.</p>
         </div>
         <div class="mt-8 flex justify-end">
           <button
@@ -122,6 +129,7 @@ const token = ref("");
 const fileError = ref<string | null>(null);
 const downloadError = ref<string | null>(null);
 const showTokenModal = ref(false);
+const modalContext = ref<"login" | "token">("login");
 const modalRef = ref<HTMLDivElement | null>(null);
 const closeButtonRef = ref<HTMLButtonElement | null>(null);
 const previouslyFocusedElement = ref<HTMLElement | null>(null);
@@ -131,7 +139,8 @@ const modalDescriptionId = "token-modal-description";
 
 const errorMessage = computed(() => auth.error);
 
-function openModal(): void {
+function openModal(context: "login" | "token" = "login"): void {
+  modalContext.value = context;
   previouslyFocusedElement.value = document.activeElement as HTMLElement | null;
   showTokenModal.value = true;
 
@@ -205,6 +214,7 @@ async function onSubmit(): Promise<void> {
   downloadError.value = null;
   try {
     await auth.login(token.value.trim());
+    openModal("login");
   } catch {
     // Fehler wird bereits im Store gesetzt.
   }
@@ -243,7 +253,7 @@ async function onRequestToken(): Promise<void> {
       }
 
       if (downloadSucceeded) {
-        openModal();
+        openModal("token");
       }
     }
   } catch (error) {
