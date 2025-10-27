@@ -92,15 +92,17 @@ const selectableFields = ["booking_date", "booking_text", "booking_type", "booki
 
 const allHeaders = computed(() => {
   const entries = new Set<string>();
+
   selectableFields.forEach((field) => {
     formMapping[field].forEach((header) => entries.add(header));
   });
 
-  bankMappingsStore.mappings.forEach((mapping) => {
+  const mapping = selectedBank.value ? bankMappingsStore.mappingByBank(selectedBank.value) : undefined;
+  if (mapping) {
     selectableFields.forEach((field) => {
       mapping[field].forEach((header) => entries.add(header));
     });
-  });
+  }
 
   return Array.from(entries);
 });
