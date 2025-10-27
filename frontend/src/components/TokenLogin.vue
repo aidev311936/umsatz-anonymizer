@@ -218,6 +218,7 @@ async function onRequestToken(): Promise<void> {
     if (result?.token) {
       let url: string | null = null;
       const link = document.createElement("a");
+      let downloadSucceeded = false;
 
       try {
         const blob = new Blob([result.token], { type: "text/plain" });
@@ -226,6 +227,7 @@ async function onRequestToken(): Promise<void> {
         link.download = TOKEN_DOWNLOAD_FILENAME;
         document.body.appendChild(link);
         link.click();
+        downloadSucceeded = true;
       } catch (error) {
         downloadError.value =
           error instanceof Error
@@ -240,7 +242,7 @@ async function onRequestToken(): Promise<void> {
         }
       }
 
-      if (!downloadError.value) {
+      if (downloadSucceeded) {
         openModal();
       }
     }
