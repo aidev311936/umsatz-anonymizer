@@ -1,0 +1,59 @@
+# Exported from Render on 2025-10-28T16:48:30Z
+version: "1"
+projects:
+- name: Haushaltshelfer
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: umsatz-anonymizer-vue-js
+      runtime: node
+      repo: https://github.com/aidev311936/umsatz-anonymizer
+      plan: free
+      envVars:
+      - key: VITE_BACKEND_BASE_URL
+        sync: false
+      - key: BACKEND_BASE_URL
+        sync: false
+      region: frankfurt
+      buildCommand: npm install && npm run build
+      startCommand: npm run serve
+      autoDeployTrigger: commit
+      rootDir: frontend
+    - type: web
+      name: umsatz-api
+      runtime: node
+      repo: https://github.com/aidev311936/umsatz-anonymizer
+      plan: free
+      envVars:
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: BACKEND_PUBLIC_ORIGIN
+        sync: false
+      - key: NODE_ENV
+        sync: false
+      - key: TOKEN_COOKIE_NAME
+        sync: false
+      - key: AUTH_TOKEN_TTL
+        sync: false
+      - key: PGSSLMODE
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      region: frankfurt
+      buildCommand: npm install --omit=dev
+      startCommand: npm run start
+      autoDeployTrigger: commit
+      rootDir: backend
+    databases:
+    - name: aidev311936
+      databaseName: umsatz_anonymizer
+      user: umsatzanonymizer
+      plan: free
+      region: frankfurt
+      ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
+      postgresMajorVersion: "17"
