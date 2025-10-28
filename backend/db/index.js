@@ -108,6 +108,10 @@ function createDb(pool) {
           : "",
       booking_account:
         typeof row.booking_account === "string" ? row.booking_account : "",
+      booking_hash:
+        typeof row.booking_hash === "string" && row.booking_hash.length > 0
+          ? row.booking_hash
+          : undefined,
     };
   }
 
@@ -120,7 +124,8 @@ function createDb(pool) {
               booking_text,
               booking_type,
               booking_amount,
-              booking_account
+              booking_account,
+              booking_hash
          FROM masked_transactions
         WHERE token = $1 AND (booking_category IS NULL OR booking_category <> $2)
         ORDER BY created_on DESC, id DESC`,
@@ -198,7 +203,8 @@ function createDb(pool) {
               booking_text,
               booking_type,
               booking_amount,
-              booking_account
+              booking_account,
+              booking_hash
          FROM masked_transactions
         WHERE token = $1 AND booking_category = $2
         ORDER BY created_on DESC, id DESC`,

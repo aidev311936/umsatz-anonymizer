@@ -20,7 +20,16 @@ npm install
 npm run dev          # startet Vite auf http://localhost:5173
 npm run build        # erzeugt den Produktionsbuild in dist/
 npm run serve        # startet den Produktionsserver (nutzt die PORT-Variable)
+npm run test         # führt die Vitest-Suite für sessionScopedStorage aus
 ```
+
+#### Sitzungsspezifischer Speicher
+
+Beim Wechsel von Local-Storage/IndexedDB auf einen strikt sitzungsgebundenen Adapter werden beim ersten Aufruf von
+`initializeStorage()` automatisch alle historischen Browserdaten bereinigt. Der Helper `purgeLegacyPersistentStorage()`
+löscht dazu die alte IndexedDB-Datenbank (`umsatz_anonymizer`) und entfernt verbleibende Local-Storage-Einträge wie
+`bank_mappings_v1` oder `transactions_unified_v1`, bevor neue Sitzungsdaten geschrieben werden. So wird sichergestellt,
+dass Altdaten nicht versehentlich wieder eingelesen werden.
 
 ### Backend (`backend/`)
 
@@ -39,11 +48,12 @@ psql "$DATABASE_URL" -f backend/db/001_init.sql
 
 ## Tests
 
-Die automatisierten Tests liegen vollständig im Backend (`backend/__tests__/`). Sie lassen sich entweder direkt im Backend-Ordner
-oder aus dem Repository-Wurzelverzeichnis ausführen:
+Die automatisierten Tests sind auf Backend und Frontend verteilt. Sie lassen sich aus den jeweiligen Ordnern oder als Workspace-Run
+starten:
 
 ```bash
-npm run test --workspace backend
+npm run test --workspace backend    # node:test-Suite für die API
+npm run test --workspace frontend   # Vitest-Suite für sessionScopedStorage
 ```
 
 ## Render.com Deployment

@@ -9,22 +9,21 @@ import {
 import { computeUnifiedTxHash } from "./transactionHash";
 import { getApiBaseUrl } from "./apiBase";
 import {
-  addRawTransactionIfMissing,
-  clearAllIndexedDbData,
-  ensureIndexedDbReady,
-  initializeIndexedDbStorage,
-  loadMaskedTransactionsSnapshot,
-  storeMaskedTransactions as storeMaskedTransactionsInDb,
-  storeRawTransactions as storeRawTransactionsInDb,
-} from "./indexedDbStorage";
-import type { StoredTransaction } from "./indexedDbStorage";
+  maskedTransactionsSessionStorage,
+  purgeLegacyPersistentStorage,
+  rawTransactionsSessionStorage,
+  sessionScopedGetItem,
+  sessionScopedRemoveItem,
+  sessionScopedSetItem,
+  type StoredTransaction,
+} from "./services/sessionScopedStorage";
 
 const maskedTransactionsStorage: {
   loadSnapshot: () => Promise<StoredTransaction[]>;
   store: (entries: UnifiedTx[], source?: UnifiedTx[]) => Promise<StoredTransaction[]>;
 } = {
-  loadSnapshot: loadMaskedTransactionsSnapshot,
-  store: storeMaskedTransactionsInDb,
+  loadSnapshot: () => maskedTransactionsSessionStorage.loadSnapshot(),
+  store: (entries, source) => maskedTransactionsSessionStorage.storeMany(entries, source),
 };
 
 export function __setMaskedTransactionsStorageForTests(
@@ -103,10 +102,18 @@ export async function initializeStorage(): Promise<void> {
   }
   if (!initializationPromise) {
     initializationPromise = (async () => {
-      const [settings, mappings, indexedDbSnapshot, masked] = await Promise.all([
+      await purgeLegacyPersistentStorage();
+      const [
+        settings,
+        mappings,
+        rawSnapshot,
+        maskedSnapshot,
+        masked,
+      ] = await Promise.all([
         fetchSettingsFromBackend(),
         fetchBankMappingsFromBackend(),
-        initializeIndexedDbStorage(),
+        rawTransactionsSessionStorage.loadSnapshot(),
+        maskedTransactionsStorage.loadSnapshot(),
         fetchMaskedTransactionsFromBackend(),
       ]);
       settingsCache = settings;
@@ -119,9 +126,16 @@ export async function initializeStorage(): Promise<void> {
       remoteBankMappings = [...mappings];
       localBankMappings = loadLocalBankMappings();
       setBankMappingsCacheFromSources();
-      updateTransactionsCache(indexedDbSnapshot.rawTransactions);
-      const maskedSource =
-        masked.length > 0 ? masked : indexedDbSnapshot.maskedTransactions;
+      const snapshotTransactions = rawSnapshot.map(({ hash, ...entry }) => ({
+        ...entry,
+        booking_hash: hash,
+      }));
+      updateTransactionsCache(snapshotTransactions);
+      const maskedSessionTransactions = maskedSnapshot.map(({ hash, ...entry }) => ({
+        ...entry,
+        booking_hash: hash,
+      }));
+      const maskedSource = masked.length > 0 ? masked : maskedSessionTransactions;
       const sanitizedMasked = updateMaskedTransactionsCache(maskedSource);
       await maskedTransactionsStorage.store(sanitizedMasked, transactionsCache);
       initialized = true;
@@ -227,7 +241,7 @@ function setBankMappingsCacheFromSources(): void {
 }
 
 function loadLocalBankMappings(): BankMapping[] {
-  const parsed = safeParse<unknown>(localStorage.getItem(LOCAL_BANK_MAPPINGS_KEY));
+  const parsed = safeParse<unknown>(sessionScopedGetItem(LOCAL_BANK_MAPPINGS_KEY));
   if (!Array.isArray(parsed)) {
     return [];
   }
@@ -240,10 +254,10 @@ function loadLocalBankMappings(): BankMapping[] {
 function persistLocalBankMappings(mappings: BankMapping[]): void {
   const sanitized = mappings.map(sanitizeBankMapping);
   if (sanitized.length === 0) {
-    localStorage.removeItem(LOCAL_BANK_MAPPINGS_KEY);
+    sessionScopedRemoveItem(LOCAL_BANK_MAPPINGS_KEY);
     return;
   }
-  localStorage.setItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
+  sessionScopedSetItem(LOCAL_BANK_MAPPINGS_KEY, JSON.stringify(sanitized, null, 2));
 }
 
 function toTransactionImportSummary(value: unknown): TransactionImportSummary | null {
@@ -408,6 +422,7 @@ function toUnifiedTx(value: unknown): UnifiedTx | null {
     booking_type?: unknown;
     booking_amount?: unknown;
     booking_account?: unknown;
+    booking_hash?: unknown;
   };
   if (
     typeof maybe.bank_name !== "string" ||
@@ -442,7 +457,19 @@ function toUnifiedTx(value: unknown): UnifiedTx | null {
     booking_amount: maybe.booking_amount,
     booking_account:
       typeof maybe.booking_account === "string" ? maybe.booking_account : "",
+    booking_hash: typeof maybe.booking_hash === "string" ? maybe.booking_hash : undefined,
   };
+}
+
+function extractHash(tx: UnifiedTx): string | undefined {
+  const withHash = tx as UnifiedTx & { hash?: unknown };
+  if (typeof withHash.booking_hash === "string" && withHash.booking_hash.length > 0) {
+    return withHash.booking_hash;
+  }
+  if (typeof withHash.hash === "string" && withHash.hash.length > 0) {
+    return withHash.hash;
+  }
+  return undefined;
 }
 
 function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
@@ -452,6 +479,7 @@ function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
     const time = Date.parse(iso);
     normalizedIso = Number.isNaN(time) ? null : iso;
   }
+  const bookingHash = extractHash(tx);
   return {
     bank_name: tx.bank_name,
     booking_date: tx.booking_date,
@@ -461,6 +489,7 @@ function sanitizeTransaction(tx: UnifiedTx): UnifiedTx {
     booking_type: tx.booking_type,
     booking_amount: tx.booking_amount,
     booking_account: typeof tx.booking_account === "string" ? tx.booking_account : "",
+    ...(bookingHash ? { booking_hash: bookingHash } : {}),
   };
 }
 
@@ -515,7 +544,10 @@ export function loadTransactions(): UnifiedTx[] {
 
 export function saveTransactions(entries: UnifiedTx[]): void {
   const updated = updateTransactionsCache(entries);
-  fireAndForget(storeRawTransactionsInDb(updated), "saveTransactions#indexedDb");
+  fireAndForget(
+    rawTransactionsSessionStorage.storeMany(updated),
+    "saveTransactions#session",
+  );
 }
 
 export interface AppendTransactionsResult {
@@ -542,19 +574,29 @@ export async function appendTransactions(
     };
   }
 
-  await ensureIndexedDbReady();
-
+  const existingSnapshot = await rawTransactionsSessionStorage.loadSnapshot();
+  const snapshotEntries = existingSnapshot.map(({ hash, ...entry }) => ({
+    ...entry,
+    booking_hash:
+      typeof entry.booking_hash === "string" && entry.booking_hash.length > 0
+        ? entry.booking_hash
+        : hash,
+  }));
+  const knownHashes = new Set(existingSnapshot.map((entry) => entry.hash));
   const uniqueEntries: UnifiedTx[] = [];
+  const entriesToPersist: UnifiedTx[] = [];
   let skippedDuplicates = 0;
   let processed = 0;
 
   for (const entry of sanitizedNewEntries) {
     const hash = await computeUnifiedTxHash(entry);
-    const added = await addRawTransactionIfMissing(entry, hash);
-    if (added) {
-      uniqueEntries.push(entry);
-    } else {
+    if (knownHashes.has(hash)) {
       skippedDuplicates += 1;
+    } else {
+      knownHashes.add(hash);
+      const entryWithHash: UnifiedTx = { ...entry, booking_hash: hash };
+      entriesToPersist.push({ ...entryWithHash });
+      uniqueEntries.push({ ...entryWithHash });
     }
     processed += 1;
     options?.onProgress?.(processed, total, uniqueEntries.length);
@@ -568,12 +610,14 @@ export async function appendTransactions(
     };
   }
 
-  const combined = transactionsCache.concat(uniqueEntries);
+  await rawTransactionsSessionStorage.storeMany([...snapshotEntries, ...entriesToPersist]);
+  const persistedTransactions = uniqueEntries.map((entry) => ({ ...entry }));
+  const combined = transactionsCache.concat(persistedTransactions);
   const updated = updateTransactionsCache(combined);
 
   return {
     transactions: updated,
-    addedCount: uniqueEntries.length,
+    addedCount: persistedTransactions.length,
     skippedDuplicates,
   };
 }
@@ -673,7 +717,7 @@ function sanitizeRule(rule: AnonRule): AnonRule {
 }
 
 export function loadAnonymizationRules(): { rules: AnonRule[]; version: number } {
-  const parsed = safeParse<unknown>(localStorage.getItem(ANON_RULES_KEY));
+  const parsed = safeParse<unknown>(sessionScopedGetItem(ANON_RULES_KEY));
   if (
     parsed &&
     typeof parsed === "object" &&
@@ -688,7 +732,7 @@ export function loadAnonymizationRules(): { rules: AnonRule[]; version: number }
         : CURRENT_RULE_VERSION;
     return { rules, version };
   }
-  localStorage.setItem(ANON_RULES_KEY, JSON.stringify(DEFAULT_RULES, null, 2));
+  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(DEFAULT_RULES, null, 2));
   return DEFAULT_RULES;
 }
 
@@ -697,7 +741,7 @@ export function saveAnonymizationRules(rules: AnonRule[]): void {
     version: CURRENT_RULE_VERSION,
     rules: rules.map(sanitizeRule),
   };
-  localStorage.setItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
+  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
 }
 
 export function importAnonymizationRules(
@@ -706,7 +750,7 @@ export function importAnonymizationRules(
   if (Array.isArray(raw)) {
     const rules = raw.filter(isAnonRule).map(sanitizeRule);
     const payload = { version: CURRENT_RULE_VERSION, rules };
-    localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+    sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
     return payload;
   }
 
@@ -716,7 +760,7 @@ export function importAnonymizationRules(
       const rules = maybe.rules.filter(isAnonRule).map(sanitizeRule);
       const version = typeof maybe.version === "number" ? maybe.version : CURRENT_RULE_VERSION;
       const payload = { version, rules };
-      localStorage.setItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
+      sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
       return payload;
     }
   }
@@ -741,16 +785,24 @@ export function clearPersistentData(): void {
     }),
     "clearPersistentData",
   );
-  fireAndForget(clearAllIndexedDbData(), "clearIndexedDbStorage");
-  const keys = [
+  fireAndForget(
+    Promise.all([
+      rawTransactionsSessionStorage.storeMany([]),
+      maskedTransactionsStorage.store([], []),
+    ]),
+    "clearSessionStorage",
+  );
+  const sessionScopedKeys = [LOCAL_BANK_MAPPINGS_KEY, ANON_RULES_KEY];
+  for (const key of sessionScopedKeys) {
+    sessionScopedRemoveItem(key);
+  }
+  const persistentKeys = [
     BANK_MAPPINGS_KEY,
-    LOCAL_BANK_MAPPINGS_KEY,
     TRANSACTIONS_KEY,
     TRANSACTIONS_MASKED_KEY,
-    ANON_RULES_KEY,
     DISPLAY_SETTINGS_KEY,
   ];
-  for (const key of keys) {
+  for (const key of persistentKeys) {
     localStorage.removeItem(key);
   }
 }

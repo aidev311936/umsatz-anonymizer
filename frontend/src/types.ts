@@ -16,6 +16,7 @@ export interface UnifiedTx {
   booking_type: string;
   booking_amount: string;
   booking_account: string;
+  booking_hash?: string;
 }
 
 export interface TransactionImportSummary {
