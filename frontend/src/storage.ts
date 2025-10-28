@@ -575,6 +575,13 @@ export async function appendTransactions(
   }
 
   const existingSnapshot = await rawTransactionsSessionStorage.loadSnapshot();
+  const snapshotEntries = existingSnapshot.map(({ hash, ...entry }) => ({
+    ...entry,
+    booking_hash:
+      typeof entry.booking_hash === "string" && entry.booking_hash.length > 0
+        ? entry.booking_hash
+        : hash,
+  }));
   const knownHashes = new Set(existingSnapshot.map((entry) => entry.hash));
   const uniqueEntries: UnifiedTx[] = [];
   const entriesToPersist: UnifiedTx[] = [];
@@ -587,8 +594,9 @@ export async function appendTransactions(
       skippedDuplicates += 1;
     } else {
       knownHashes.add(hash);
-      entriesToPersist.push({ ...entry });
-      uniqueEntries.push({ ...entry, booking_hash: hash });
+      const entryWithHash: UnifiedTx = { ...entry, booking_hash: hash };
+      entriesToPersist.push({ ...entryWithHash });
+      uniqueEntries.push({ ...entryWithHash });
     }
     processed += 1;
     options?.onProgress?.(processed, total, uniqueEntries.length);
@@ -602,11 +610,8 @@ export async function appendTransactions(
     };
   }
 
-  const persisted = await rawTransactionsSessionStorage.storeMany(entriesToPersist);
-  const persistedTransactions = persisted.map(({ hash, ...entry }) => ({
-    ...entry,
-    booking_hash: hash,
-  }));
+  await rawTransactionsSessionStorage.storeMany([...snapshotEntries, ...entriesToPersist]);
+  const persistedTransactions = uniqueEntries.map((entry) => ({ ...entry }));
   const combined = transactionsCache.concat(persistedTransactions);
   const updated = updateTransactionsCache(combined);
 
