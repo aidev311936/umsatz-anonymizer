@@ -221,6 +221,12 @@ function isBankMapping(value) {
   ) {
     return false;
   }
+  if (
+    Object.prototype.hasOwnProperty.call(maybe, "without_header") &&
+    typeof maybe.without_header !== "boolean"
+  ) {
+    return false;
+  }
   return true;
 }
 

@@ -5,6 +5,7 @@ export interface BankMapping {
   booking_type: string[];
   booking_amount: string[];
   booking_date_parse_format: string;
+  without_header: boolean;
 }
 
 export interface UnifiedTx {

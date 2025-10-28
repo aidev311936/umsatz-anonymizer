@@ -250,7 +250,7 @@ function createDb(pool) {
 
   async function listBankMappings(token) {
     const result = await pool.query(
-      `SELECT bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format
+      `SELECT bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format, without_header
          FROM bank_mapping
         ORDER BY bank_name ASC`,
     );
@@ -261,13 +261,14 @@ function createDb(pool) {
       booking_text: Array.isArray(row.booking_text) ? row.booking_text : [],
       booking_type: Array.isArray(row.booking_type) ? row.booking_type : [],
       booking_date_parse_format: typeof row.booking_date_parse_format === "string" ? row.booking_date_parse_format : "",
+      without_header: row.without_header === true,
     }));
   }
 
   async function upsertBankMapping(token, mapping) {
     await pool.query(
-      `INSERT INTO bank_mapping(bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO bank_mapping(bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format, without_header)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (bank_name)
        DO UPDATE SET
          booking_date = EXCLUDED.booking_date,
@@ -275,6 +276,7 @@ function createDb(pool) {
          booking_text = EXCLUDED.booking_text,
          booking_type = EXCLUDED.booking_type,
          booking_date_parse_format = EXCLUDED.booking_date_parse_format,
+         without_header = EXCLUDED.without_header,
          updated_on = now()`,
       [
         mapping.bank_name,
@@ -283,6 +285,7 @@ function createDb(pool) {
         mapping.booking_text,
         mapping.booking_type,
         mapping.booking_date_parse_format,
+        mapping.without_header === true,
       ],
     );
   }

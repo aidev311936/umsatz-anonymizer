@@ -15,6 +15,14 @@ function createIndexMap(header: string[]): Record<string, number> {
 }
 
 function readValue(row: string[], columnName: string, indexMap: Record<string, number>): string {
+  const placeholderMatch = /^\$(\d+)$/.exec(columnName);
+  if (placeholderMatch) {
+    const columnIndex = Number.parseInt(placeholderMatch[1], 10) - 1;
+    if (Number.isNaN(columnIndex) || columnIndex < 0) {
+      return "";
+    }
+    return (row[columnIndex] ?? "").toString().trim();
+  }
   const index = indexMap[columnName];
   if (index === undefined) {
     return "";
@@ -56,10 +64,11 @@ export function applyMapping(
   bookingAccount: string,
   displaySettings: DisplaySettings
 ): UnifiedTx[] {
+  const effectiveRows = mapping.without_header ? [header, ...rows] : rows;
   const indexMap = createIndexMap(header);
   const transactions: UnifiedTx[] = [];
 
-  for (const row of rows) {
+  for (const row of effectiveRows) {
     const bookingDateRaw = firstNonEmpty(
       mapping.booking_date.map((column) => readValue(row, column, indexMap))
     );

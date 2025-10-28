@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS bank_mapping (
   booking_text TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
   booking_type TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
   booking_date_parse_format TEXT NOT NULL DEFAULT '',
+  without_header BOOLEAN NOT NULL DEFAULT FALSE,
   created_on TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_on TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT bank_mapping_unique_bank UNIQUE (bank_name)

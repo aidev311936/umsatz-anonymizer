@@ -86,17 +86,16 @@ const formMapping = reactive<MappingSelection>({
   booking_type: [],
   booking_amount: [],
   booking_date_parse_format: "",
+  without_header: false,
 });
 
 const selectableFields = ["booking_date", "booking_text", "booking_type", "booking_amount"] as const;
 
 const allHeaders = computed(() => {
-  const entries: string[] = [];
+  const entries = new Set<string>();
 
   const addUnique = (value: string) => {
-    if (!entries.includes(value)) {
-      entries.push(value);
-    }
+    entries.add(value);
   };
 
   selectableFields.forEach((field) => {
@@ -110,7 +109,23 @@ const allHeaders = computed(() => {
     });
   }
 
-  return entries;
+  if (formMapping.without_header) {
+    const placeholderPattern = /^\$(\d+)$/;
+    const used = Array.from(entries).reduce((max, value) => {
+      const match = placeholderPattern.exec(value);
+      if (!match) {
+        return max;
+      }
+      const index = Number.parseInt(match[1], 10);
+      return Number.isNaN(index) ? max : Math.max(max, index);
+    }, 0);
+    const limit = Math.max(used, 5);
+    for (let i = 1; i <= limit; i += 1) {
+      addUnique(`$${i}`);
+    }
+  }
+
+  return Array.from(entries);
 });
 
 function selectMapping(bank: string): void {
@@ -122,6 +137,7 @@ function selectMapping(bank: string): void {
     formMapping.booking_type = [...mapping.booking_type];
     formMapping.booking_amount = [...mapping.booking_amount];
     formMapping.booking_date_parse_format = mapping.booking_date_parse_format;
+    formMapping.without_header = mapping.without_header;
   }
 }
 
@@ -132,6 +148,7 @@ function createNew(): void {
   formMapping.booking_type = [];
   formMapping.booking_amount = [];
   formMapping.booking_date_parse_format = "";
+  formMapping.without_header = false;
 }
 
 async function save(): Promise<void> {
@@ -145,6 +162,7 @@ async function save(): Promise<void> {
     booking_type: [...formMapping.booking_type],
     booking_amount: [...formMapping.booking_amount],
     booking_date_parse_format: formMapping.booking_date_parse_format,
+    without_header: formMapping.without_header,
   });
   statusMessage.value = `Mapping für ${selectedBank.value} gespeichert.`;
 }
@@ -174,6 +192,7 @@ function updateMapping(value: MappingSelection): void {
   formMapping.booking_type = [...value.booking_type];
   formMapping.booking_amount = [...value.booking_amount];
   formMapping.booking_date_parse_format = value.booking_date_parse_format;
+  formMapping.without_header = value.without_header;
 }
 
 watchEffect(() => {
