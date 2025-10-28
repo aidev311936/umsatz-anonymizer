@@ -6,7 +6,87 @@ import {
   readCsvFile,
   type MappingSelection,
 } from "../services/importService";
-import type { UnifiedTx } from "../types";
+import type { HeaderDetectionResult } from "../headerDetect";
+import { useBankMappingsStore } from "./bankMappings";
+import type { BankMapping, UnifiedTx } from "../types";
+
+const MAPPING_FIELDS: Array<keyof Pick<BankMapping, "booking_date" | "booking_text" | "booking_type" | "booking_amount">> = [
+  "booking_date",
+  "booking_text",
+  "booking_type",
+  "booking_amount",
+];
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function matchMappingByHeader(
+  detection: HeaderDetectionResult,
+  mappings: BankMapping[],
+): BankMapping | null {
+  if (detection.header.length === 0) {
+    return null;
+  }
+  const normalizedHeader = detection.header.map(normalize);
+  let bestMatch: { mapping: BankMapping; score: number } | null = null;
+
+  for (const mapping of mappings) {
+    let score = 0;
+    let qualifies = true;
+
+    for (const field of MAPPING_FIELDS) {
+      const columns = mapping[field];
+      if (columns.length === 0) {
+        continue;
+      }
+      const matches = columns.filter((column) => normalizedHeader.includes(normalize(column)));
+      if (matches.length === 0) {
+        qualifies = false;
+        break;
+      }
+      score += matches.length;
+    }
+
+    if (!qualifies) {
+      continue;
+    }
+
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = { mapping, score };
+    }
+  }
+
+  return bestMatch?.mapping ?? null;
+}
+
+function resolveDetectedMapping(
+  detection: HeaderDetectionResult,
+  mappings: BankMapping[],
+): BankMapping | null {
+  if (mappings.length === 0) {
+    return null;
+  }
+
+  const detectedName = detection.detectedBank?.trim();
+  if (detectedName) {
+    const normalizedDetected = normalize(detectedName);
+    const exactMatch = mappings.find((mapping) => normalize(mapping.bank_name) === normalizedDetected);
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const substringMatch = mappings.find((mapping) => {
+      const normalizedBank = normalize(mapping.bank_name);
+      return normalizedBank.includes(normalizedDetected) || normalizedDetected.includes(normalizedBank);
+    });
+    if (substringMatch) {
+      return substringMatch;
+    }
+  }
+
+  return matchMappingByHeader(detection, mappings);
+}
 
 interface ImportState {
   bankName: string;
@@ -62,18 +142,31 @@ export const useImportStore = defineStore("import", {
       this.error = null;
     },
     async loadFile(file: File): Promise<void> {
+      const bankMappingsStore = useBankMappingsStore();
       this.loading = true;
       this.error = null;
       try {
+        await bankMappingsStore.initialize();
         const rows = await readCsvFile(file);
         const detection = analyzeHeader(rows);
+        const matchedMapping = resolveDetectedMapping(detection, bankMappingsStore.mappings);
         this.header = detection.header;
         this.dataRows = detection.dataRows;
-        this.detectedBank = detection.detectedBank ?? null;
+        this.detectedBank = matchedMapping?.bank_name ?? detection.detectedBank ?? null;
         this.skippedRows = detection.skippedRows;
         this.warning = detection.warning ?? null;
         if (!this.mapping || this.mapping.booking_date.length === 0) {
-          this.mapping = createDefaultMapping(detection.header);
+          if (matchedMapping) {
+            this.mapping = {
+              booking_date: [...matchedMapping.booking_date],
+              booking_text: [...matchedMapping.booking_text],
+              booking_type: [...matchedMapping.booking_type],
+              booking_amount: [...matchedMapping.booking_amount],
+              booking_date_parse_format: matchedMapping.booking_date_parse_format,
+            };
+          } else {
+            this.mapping = createDefaultMapping(detection.header);
+          }
         }
       } catch (error) {
         this.error = error instanceof Error ? error.message : "CSV konnte nicht geladen werden";
