@@ -215,6 +215,7 @@ export function formatTransactionsForDisplay(
   return entries.map((tx) => ({
     ...tx,
     booking_date: formatTransactionDate(tx, settings),
+    booking_amount: formatBookingAmount(tx.booking_amount, settings),
   }));
 }
 
