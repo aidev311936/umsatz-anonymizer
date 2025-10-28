@@ -44,5 +44,6 @@ export function createDefaultMapping(header: string[]): MappingSelection {
     booking_type: header.slice(2, 3),
     booking_amount: header.slice(3, 4),
     booking_date_parse_format: "",
+    without_header: false,
   };
 }

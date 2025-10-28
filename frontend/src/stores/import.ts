@@ -163,6 +163,7 @@ export const useImportStore = defineStore("import", {
               booking_type: [...matchedMapping.booking_type],
               booking_amount: [...matchedMapping.booking_amount],
               booking_date_parse_format: matchedMapping.booking_date_parse_format,
+              without_header: matchedMapping.without_header,
             };
           } else {
             this.mapping = createDefaultMapping(detection.header);

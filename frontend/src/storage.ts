@@ -162,6 +162,7 @@ function toBankMapping(value: unknown): BankMapping | null {
     booking_type?: unknown;
     booking_amount?: unknown;
     booking_date_parse_format?: unknown;
+    without_header?: unknown;
   };
   if (
     typeof maybe.bank_name !== "string" ||
@@ -177,6 +178,7 @@ function toBankMapping(value: unknown): BankMapping | null {
     typeof maybe.booking_date_parse_format === "string"
       ? maybe.booking_date_parse_format
       : "";
+  const withoutHeader = maybe.without_header === true;
   return {
     bank_name: maybe.bank_name,
     booking_date: [...maybe.booking_date],
@@ -184,6 +186,7 @@ function toBankMapping(value: unknown): BankMapping | null {
     booking_type: [...maybe.booking_type],
     booking_amount: [...maybe.booking_amount],
     booking_date_parse_format: parseFormat,
+    without_header: withoutHeader,
   };
 }
 
@@ -196,6 +199,7 @@ function sanitizeBankMapping(mapping: BankMapping): BankMapping {
     booking_type: [...mapping.booking_type],
     booking_amount: [...mapping.booking_amount],
     booking_date_parse_format: parseFormat,
+    without_header: mapping.without_header === true,
   };
 }
 

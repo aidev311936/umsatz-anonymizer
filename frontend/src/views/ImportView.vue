@@ -175,6 +175,7 @@ function ensureMapping(): MappingSelection {
       booking_type: [...existing.booking_type],
       booking_amount: [...existing.booking_amount],
       booking_date_parse_format: existing.booking_date_parse_format,
+      without_header: existing.without_header,
     };
     return mapping.value;
   }
@@ -184,6 +185,7 @@ function ensureMapping(): MappingSelection {
     booking_type: [],
     booking_amount: [],
     booking_date_parse_format: "",
+    without_header: false,
   };
   return mapping.value;
 }
@@ -210,7 +212,11 @@ watch(
   (bank) => {
     const existing = bankMappingsStore.mappingByBank(bank);
     if (existing) {
-      importStore.setMapping({ ...existing, booking_date_parse_format: existing.booking_date_parse_format });
+      importStore.setMapping({
+        ...existing,
+        booking_date_parse_format: existing.booking_date_parse_format,
+        without_header: existing.without_header,
+      });
       mapping.value = importStore.mapping;
     }
   },

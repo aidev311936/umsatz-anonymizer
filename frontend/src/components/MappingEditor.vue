@@ -1,5 +1,18 @@
 <template>
   <div class="space-y-6">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <label class="flex items-center gap-3">
+        <input
+          v-model="withoutHeader"
+          type="checkbox"
+          class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        />
+        <span class="text-sm font-semibold text-slate-900">CSV ohne Kopfzeile</span>
+      </label>
+      <p class="mt-2 text-xs text-slate-500">
+        Wenn keine Kopfzeile vorhanden ist, wählen Sie stattdessen die Spaltennummern (z. B. $1, $2, ...).
+      </p>
+    </div>
     <div v-for="field in fields" :key="field.key" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-slate-900">{{ field.label }}</h3>
@@ -12,7 +25,7 @@
         @change="onSelectionChange(field.key, $event)"
       >
         <option
-          v-for="header in headers"
+          v-for="header in headerOptions"
           :key="header"
           :value="header"
           :selected="selections[field.key].includes(header)"
@@ -57,7 +70,7 @@
 import { computed, reactive, watch } from "vue";
 import type { MappingSelection } from "../services/importService";
 
-type SelectionField = Exclude<keyof MappingSelection, "booking_date_parse_format">;
+type SelectionField = Exclude<keyof MappingSelection, "booking_date_parse_format" | "without_header">;
 
 const props = defineProps<{
   headers: string[];
@@ -82,6 +95,13 @@ const selections = reactive<Record<SelectionField, string[]>>({
   booking_amount: [...props.modelValue.booking_amount],
 });
 
+const withoutHeader = computed({
+  get: () => props.modelValue.without_header,
+  set: (value: boolean) => {
+    emitUpdated({ without_header: value });
+  },
+});
+
 const dateParseFormat = computed({
   get: () => props.modelValue.booking_date_parse_format,
   set: (value: string) => {
@@ -100,6 +120,34 @@ watch(
   { deep: true },
 );
 
+const headerOptions = computed(() => {
+  if (!withoutHeader.value) {
+    return [...props.headers];
+  }
+  const usedPlaceholders = new Set<number>();
+  const placeholderPattern = /^\$(\d+)$/;
+  const registerValue = (value: string) => {
+    const match = placeholderPattern.exec(value);
+    if (!match) {
+      return;
+    }
+    const index = Number.parseInt(match[1], 10);
+    if (!Number.isNaN(index) && index > 0) {
+      usedPlaceholders.add(index);
+    }
+  };
+  fields.forEach((field) => {
+    selections[field.key].forEach(registerValue);
+    props.modelValue[field.key].forEach(registerValue);
+  });
+  props.headers.forEach(registerValue);
+  const maxIndex = usedPlaceholders.size > 0 ? Math.max(...usedPlaceholders) : 0;
+  const limit = Math.max(maxIndex, props.headers.length, 5);
+  const placeholders = Array.from({ length: limit }, (_value, idx) => `$${idx + 1}`);
+  const combined = new Set<string>([...props.headers, ...placeholders]);
+  return Array.from(combined);
+});
+
 function emitUpdated(patch: Partial<MappingSelection>): void {
   const next: MappingSelection = {
     booking_date: [...selections.booking_date],
@@ -107,6 +155,7 @@ function emitUpdated(patch: Partial<MappingSelection>): void {
     booking_type: [...selections.booking_type],
     booking_amount: [...selections.booking_amount],
     booking_date_parse_format: props.modelValue.booking_date_parse_format,
+    without_header: props.modelValue.without_header,
   };
   Object.assign(next, patch);
   emit("update:modelValue", next);
