@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
-import type { MappingSelection } from "../services/importService";
+import type { MappingSelection } from "../types";
 
 type SelectionField = Exclude<keyof MappingSelection, "booking_date_parse_format" | "without_header">;
 

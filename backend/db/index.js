@@ -248,9 +248,73 @@ function createDb(pool) {
     });
   }
 
+  function sanitizeDetectionHints(input) {
+    if (typeof input !== "object" || input === null || Array.isArray(input)) {
+      return null;
+    }
+
+    const hints = {};
+
+    if (Array.isArray(input.header_signature)) {
+      const signature = input.header_signature
+        .filter((entry) => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      if (signature.length > 0) {
+        hints.header_signature = signature;
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(input, "without_header") &&
+      typeof input.without_header === "object" &&
+      input.without_header !== null &&
+      !Array.isArray(input.without_header)
+    ) {
+      const { without_header } = input;
+      const normalized = {};
+
+      if (
+        Object.prototype.hasOwnProperty.call(without_header, "column_count") &&
+        Number.isInteger(without_header.column_count) &&
+        without_header.column_count >= 0
+      ) {
+        normalized.column_count = without_header.column_count;
+      }
+
+      if (Array.isArray(without_header.column_markers)) {
+        const markers = without_header.column_markers
+          .filter((entry) => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0);
+        if (markers.length > 0) {
+          normalized.column_markers = markers;
+        }
+      }
+
+      if (Object.keys(normalized).length > 0) {
+        hints.without_header = normalized;
+      }
+    }
+
+    return Object.keys(hints).length > 0 ? hints : null;
+  }
+
+  function normalizeDetectionForStorage(value) {
+    const sanitized = sanitizeDetectionHints(value);
+    return sanitized ?? {};
+  }
+
   async function listBankMappings(token) {
     const result = await pool.query(
-      `SELECT bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format, without_header
+      `SELECT bank_name,
+              booking_date,
+              amount,
+              booking_text,
+              booking_type,
+              booking_date_parse_format,
+              without_header,
+              detection_hints
          FROM bank_mapping
         ORDER BY bank_name ASC`,
     );
@@ -262,13 +326,22 @@ function createDb(pool) {
       booking_type: Array.isArray(row.booking_type) ? row.booking_type : [],
       booking_date_parse_format: typeof row.booking_date_parse_format === "string" ? row.booking_date_parse_format : "",
       without_header: row.without_header === true,
+      detection: sanitizeDetectionHints(row.detection_hints),
     }));
   }
 
   async function upsertBankMapping(token, mapping) {
     await pool.query(
-      `INSERT INTO bank_mapping(bank_name, booking_date, amount, booking_text, booking_type, booking_date_parse_format, without_header)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO bank_mapping(
+          bank_name,
+          booking_date,
+          amount,
+          booking_text,
+          booking_type,
+          booking_date_parse_format,
+          without_header,
+          detection_hints)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (bank_name)
        DO UPDATE SET
          booking_date = EXCLUDED.booking_date,
@@ -277,6 +350,7 @@ function createDb(pool) {
          booking_type = EXCLUDED.booking_type,
          booking_date_parse_format = EXCLUDED.booking_date_parse_format,
          without_header = EXCLUDED.without_header,
+         detection_hints = EXCLUDED.detection_hints,
          updated_on = now()`,
       [
         mapping.bank_name,
@@ -286,6 +360,7 @@ function createDb(pool) {
         mapping.booking_type,
         mapping.booking_date_parse_format,
         mapping.without_header === true,
+        normalizeDetectionForStorage(mapping.detection),
       ],
     );
   }

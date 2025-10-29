@@ -1,8 +1,6 @@
 import { formatDateWithFormat, parseDateWithFormat } from "./dateFormat";
 import { DEFAULT_DATE_DISPLAY_FORMAT } from "./displaySettings";
-import { BankMapping, DisplaySettings, UnifiedTx } from "./types";
-
-type MappingSelection = Omit<BankMapping, "bank_name">;
+import { DisplaySettings, MappingSelection, UnifiedTx } from "./types";
 
 function createIndexMap(header: string[]): Record<string, number> {
   const map: Record<string, number> = {};

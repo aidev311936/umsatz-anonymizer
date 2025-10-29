@@ -1,11 +1,6 @@
 import { defineStore } from "pinia";
-import {
-  analyzeHeader,
-  createDefaultMapping,
-  createTransactions,
-  readCsvFile,
-  type MappingSelection,
-} from "../services/importService";
+import { analyzeHeader, createDefaultMapping, createTransactions, readCsvFile } from "../services/importService";
+import type { MappingSelection } from "../types";
 import type { HeaderDetectionResult } from "../headerDetect";
 import { useBankMappingsStore } from "./bankMappings";
 import type { BankMapping, UnifiedTx } from "../types";

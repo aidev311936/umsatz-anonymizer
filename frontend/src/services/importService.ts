@@ -6,9 +6,7 @@ import {
   sanitizeDisplaySettings,
   type DisplaySettings,
 } from "../displaySettings";
-import type { BankMapping, UnifiedTx } from "../types";
-
-export interface MappingSelection extends Omit<BankMapping, "bank_name"> {}
+import type { MappingSelection, UnifiedTx } from "../types";
 
 export async function readCsvFile(file: File): Promise<string[][]> {
   return parseCsv(file);

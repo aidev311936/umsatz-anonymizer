@@ -2,6 +2,7 @@ import { sanitizeDisplaySettings } from "./displaySettings";
 import {
   AnonRule,
   BankMapping,
+  BankMappingDetection,
   DisplaySettings,
   TransactionImportSummary,
   UnifiedTx,
@@ -34,6 +35,13 @@ export function __setMaskedTransactionsStorageForTests(
   return () => {
     Object.assign(maskedTransactionsStorage, previous);
   };
+}
+
+export function __resetBankMappingsForTests(): void {
+  bankMappingsCache.length = 0;
+  remoteBankMappings = [];
+  localBankMappings = [];
+  sessionScopedRemoveItem(LOCAL_BANK_MAPPINGS_KEY);
 }
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
@@ -151,6 +159,61 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
+function sanitizeDetection(value: unknown): BankMappingDetection | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const maybe = value as {
+    header_signature?: unknown;
+    without_header?: unknown;
+  };
+
+  const detection: BankMappingDetection = {};
+
+  if (Array.isArray(maybe.header_signature)) {
+    const signature = maybe.header_signature
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (signature.length > 0) {
+      detection.header_signature = signature;
+    }
+  }
+
+  if (
+    typeof maybe.without_header === "object" &&
+    maybe.without_header !== null &&
+    !Array.isArray(maybe.without_header)
+  ) {
+    const raw = maybe.without_header as {
+      column_count?: unknown;
+      column_markers?: unknown;
+    };
+    const normalized: NonNullable<BankMappingDetection["without_header"]> = {};
+
+    if (Number.isInteger(raw.column_count) && (raw.column_count as number) >= 0) {
+      normalized.column_count = raw.column_count as number;
+    }
+
+    if (Array.isArray(raw.column_markers)) {
+      const markers = raw.column_markers
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      if (markers.length > 0) {
+        normalized.column_markers = markers;
+      }
+    }
+
+    if (Object.keys(normalized).length > 0) {
+      detection.without_header = normalized;
+    }
+  }
+
+  return Object.keys(detection).length > 0 ? detection : null;
+}
+
 function toBankMapping(value: unknown): BankMapping | null {
   if (typeof value !== "object" || value === null) {
     return null;
@@ -163,6 +226,7 @@ function toBankMapping(value: unknown): BankMapping | null {
     booking_amount?: unknown;
     booking_date_parse_format?: unknown;
     without_header?: unknown;
+    detection?: unknown;
   };
   if (
     typeof maybe.bank_name !== "string" ||
@@ -179,6 +243,7 @@ function toBankMapping(value: unknown): BankMapping | null {
       ? maybe.booking_date_parse_format
       : "";
   const withoutHeader = maybe.without_header === true;
+  const detection = sanitizeDetection(maybe.detection);
   return {
     bank_name: maybe.bank_name,
     booking_date: [...maybe.booking_date],
@@ -187,6 +252,7 @@ function toBankMapping(value: unknown): BankMapping | null {
     booking_amount: [...maybe.booking_amount],
     booking_date_parse_format: parseFormat,
     without_header: withoutHeader,
+    detection,
   };
 }
 
@@ -200,6 +266,7 @@ function sanitizeBankMapping(mapping: BankMapping): BankMapping {
     booking_amount: [...mapping.booking_amount],
     booking_date_parse_format: parseFormat,
     without_header: mapping.without_header === true,
+    detection: sanitizeDetection(mapping.detection ?? null),
   };
 }
 
@@ -381,7 +448,7 @@ export function importBankMappings(raw: unknown): BankMapping[] | null {
   return sanitized;
 }
 
-export function saveBankMapping(mapping: BankMapping): void {
+export function saveBankMapping(mapping: BankMapping): BankMapping {
   const sanitized = sanitizeBankMapping(mapping);
   const normalized = sanitized.bank_name.trim().toLowerCase();
   const index = localBankMappings.findIndex(
@@ -394,6 +461,7 @@ export function saveBankMapping(mapping: BankMapping): void {
   }
   persistLocalBankMappings(localBankMappings);
   setBankMappingsCacheFromSources();
+  return sanitized;
 }
 
 export function loadDisplaySettings(): DisplaySettings {
