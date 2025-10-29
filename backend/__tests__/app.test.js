@@ -1,7 +1,7 @@
 const { test, mock } = require("node:test");
 const assert = require("node:assert/strict");
 const request = require("supertest");
-const { createApp } = require("../app.js");
+const { createApp, isBankMapping } = require("../app.js");
 
 function createSpy(fn) {
   const calls = [];
@@ -515,4 +515,73 @@ test("persistMaskedTransactions posts booking hashes to backend", async () => {
       global.document = originalDocument;
     }
   }
+});
+
+test("isBankMapping accepts detection hints", () => {
+  const baseMapping = {
+    bank_name: "Example",
+    booking_date: ["Buchungstag"],
+    booking_text: ["Buchungstext"],
+    booking_type: ["Typ"],
+    booking_amount: ["Betrag"],
+    booking_date_parse_format: "", 
+    without_header: false,
+  };
+
+  assert.equal(
+    isBankMapping({
+      ...baseMapping,
+      detection: {
+        header_signature: ["Buchungstag", "Buchungstext"],
+        without_header: {
+          column_count: 5,
+          column_markers: ["date", "text", "number"],
+        },
+      },
+    }),
+    true,
+  );
+});
+
+test("isBankMapping rejects invalid detection hints", () => {
+  const baseMapping = {
+    bank_name: "Example",
+    booking_date: ["Buchungstag"],
+    booking_text: ["Buchungstext"],
+    booking_type: ["Typ"],
+    booking_amount: ["Betrag"],
+    booking_date_parse_format: "",
+    without_header: false,
+  };
+
+  assert.equal(
+    isBankMapping({
+      ...baseMapping,
+      detection: {
+        header_signature: ["Buchungstag", 42],
+      },
+    }),
+    false,
+  );
+
+  assert.equal(
+    isBankMapping({
+      ...baseMapping,
+      detection: {
+        without_header: {
+          column_count: -1,
+          column_markers: ["text"],
+        },
+      },
+    }),
+    false,
+  );
+
+  assert.equal(
+    isBankMapping({
+      ...baseMapping,
+      detection: { unexpected: true },
+    }),
+    false,
+  );
 });
