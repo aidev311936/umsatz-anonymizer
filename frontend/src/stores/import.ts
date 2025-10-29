@@ -36,11 +36,6 @@ export const useImportStore = defineStore("import", {
     lastImported: [],
     candidates: [],
   }),
-  getters: {
-    hasHeader(state): boolean {
-      return state.hasHeader;
-    },
-  },
   actions: {
     setBankName(value: string): void {
       this.bankName = value.trim();
