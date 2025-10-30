@@ -17,7 +17,8 @@ interface ImportState {
   loading: boolean;
   error: string | null;
   lastImported: UnifiedTx[];
-  candidates: DetectedBankCandidate[];
+  detectedBanks: DetectedBankCandidate[];
+  selectedDetectedBankIndex: number | null;
 }
 
 export const useImportStore = defineStore("import", {
@@ -34,8 +35,20 @@ export const useImportStore = defineStore("import", {
     loading: false,
     error: null,
     lastImported: [],
-    candidates: [],
+    detectedBanks: [],
+    selectedDetectedBankIndex: null,
   }),
+  getters: {
+    selectedDetectedBank(state): DetectedBankCandidate | null {
+      if (state.selectedDetectedBankIndex === null) {
+        return null;
+      }
+      return state.detectedBanks[state.selectedDetectedBankIndex] ?? null;
+    },
+    requiresManualBankSelection(state): boolean {
+      return state.detectedBanks.length !== 1;
+    },
+  },
   actions: {
     setBankName(value: string): void {
       this.bankName = value.trim();
@@ -56,7 +69,32 @@ export const useImportStore = defineStore("import", {
       this.warning = null;
       this.lastImported = [];
       this.error = null;
-      this.candidates = [];
+      this.detectedBanks = [];
+      this.selectedDetectedBankIndex = null;
+    },
+    setDetectedBankCandidates(candidates: DetectedBankCandidate[]): void {
+      this.detectedBanks = [...candidates];
+      if (candidates.length === 0) {
+        this.selectedDetectedBankIndex = null;
+        this.detectedBank = null;
+        return;
+      }
+      const preferredIndex = candidates.findIndex((candidate) => candidate.passed);
+      this.selectDetectedBank(preferredIndex >= 0 ? preferredIndex : 0);
+    },
+    selectDetectedBank(index: number | null): void {
+      if (index === null || index < 0 || index >= this.detectedBanks.length) {
+        this.selectedDetectedBankIndex = null;
+        this.detectedBank = null;
+        return;
+      }
+      this.selectedDetectedBankIndex = index;
+      const candidate = this.detectedBanks[index];
+      const bankName = candidate?.mapping.bank_name ?? "";
+      this.detectedBank = bankName || null;
+      if (bankName) {
+        this.setBankName(bankName);
+      }
     },
     async loadFile(file: File): Promise<void> {
       const bankMappingsStore = useBankMappingsStore();
@@ -72,9 +110,7 @@ export const useImportStore = defineStore("import", {
         this.header = detection.header;
         this.dataRows = detection.dataRows;
         this.hasHeader = detection.hasHeader;
-        this.candidates = detection.candidates;
-        this.detectedBank =
-          matchedMapping?.bank_name ?? preferredCandidate?.mapping.bank_name ?? this.detectedBank ?? null;
+        this.setDetectedBankCandidates(detection.candidates);
         this.skippedRows = detection.skippedRows;
         this.warning = detection.warning ?? null;
         if (!this.mapping || this.mapping.booking_date.length === 0) {

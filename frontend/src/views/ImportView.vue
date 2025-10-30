@@ -27,14 +27,26 @@
                   <span class="sr-only">Information zum Feld Bankname</span>
                 </span>
               </div>
-              <input
+              <select
+                v-if="importStore.detectedBanks.length > 0"
                 id="bank"
-                v-model="importStore.bankName"
-                list="knownBanks"
+                v-model="selectedDetectedBankOption"
+                class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-describedby="bank-name-hint"
+              >
+                <option v-for="(candidate, index) in importStore.detectedBanks" :key="`${candidate.mapping.bank_name}-${index}`" :value="`${index}`">
+                  {{ candidate.mapping.bank_name }}
+                </option>
+              </select>
+              <input
+                v-else
+                id="bank"
+                v-model="bankNameInput"
                 type="text"
                 placeholder="z. B. comdirect"
                 class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 aria-describedby="bank-name-hint"
+                list="knownBanks"
               />
               <datalist id="knownBanks">
                 <option v-for="bank in bankMappingsStore.knownBanks" :key="bank" :value="bank" />
@@ -158,6 +170,24 @@ const importSummary = ref("");
 const dialogClosable = ref(false);
 
 const mapping = reactive<{ value: MappingSelection | null }>({ value: importStore.mapping });
+
+const selectedDetectedBankOption = computed({
+  get: () => (importStore.selectedDetectedBankIndex === null ? "" : `${importStore.selectedDetectedBankIndex}`),
+  set: (value: string) => {
+    if (value === "") {
+      importStore.selectDetectedBank(null);
+    } else {
+      importStore.selectDetectedBank(Number.parseInt(value, 10));
+    }
+  },
+});
+
+const bankNameInput = computed({
+  get: () => importStore.bankName,
+  set: (value: string) => {
+    importStore.setBankName(value);
+  },
+});
 
 function isProbablyNumber(value: string): boolean {
   const trimmed = value.trim();
@@ -339,9 +369,6 @@ watch(
 
 async function handleFileSelected(file: File): Promise<void> {
   await importStore.loadFile(file);
-  if (!importStore.bankName && importStore.detectedBank) {
-    importStore.setBankName(importStore.detectedBank);
-  }
   mapping.value = importStore.mapping;
 }
 
