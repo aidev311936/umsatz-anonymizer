@@ -124,28 +124,34 @@ const headerOptions = computed(() => {
   if (!withoutHeader.value) {
     return [...props.headers];
   }
-  const usedPlaceholders = new Set<number>();
+
   const placeholderPattern = /^\$(\d+)$/;
+  const selectedValues = new Set<string>();
+  const usedPlaceholderIndices = new Set<number>();
+
   const registerValue = (value: string) => {
+    selectedValues.add(value);
     const match = placeholderPattern.exec(value);
     if (!match) {
       return;
     }
     const index = Number.parseInt(match[1], 10);
     if (!Number.isNaN(index) && index > 0) {
-      usedPlaceholders.add(index);
+      usedPlaceholderIndices.add(index);
     }
   };
+
   fields.forEach((field) => {
     selections[field.key].forEach(registerValue);
     props.modelValue[field.key].forEach(registerValue);
   });
-  props.headers.forEach(registerValue);
-  const maxIndex = usedPlaceholders.size > 0 ? Math.max(...usedPlaceholders) : 0;
-  const limit = Math.max(maxIndex, props.headers.length, 5);
-  const placeholders = Array.from({ length: limit }, (_value, idx) => `$${idx + 1}`);
-  const combined = new Set<string>([...props.headers, ...placeholders]);
-  return Array.from(combined);
+
+  const maxSelectedPlaceholder =
+    usedPlaceholderIndices.size > 0 ? Math.max(...usedPlaceholderIndices) : 0;
+  const placeholderCount = Math.max(maxSelectedPlaceholder, props.headers.length, 5);
+  const placeholders = Array.from({ length: placeholderCount }, (_value, idx) => `$${idx + 1}`);
+
+  return Array.from(new Set<string>([...placeholders, ...selectedValues]));
 });
 
 function emitUpdated(patch: Partial<MappingSelection>): void {
