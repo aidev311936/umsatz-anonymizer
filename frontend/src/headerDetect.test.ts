@@ -131,4 +131,34 @@ describe("header detection", () => {
     expect(result.candidates[1].passed).toBe(false);
     expect(result.candidates[0].score).toBeGreaterThan(result.candidates[1].score);
   });
+
+  it("keeps headerless fallback when no candidates pass", () => {
+    const rows = [
+      ["01.01.2024", "Kartenzahlung", "Supermarkt", "10,50"],
+      ["02.01.2024", "Kartenzahlung", "Bäcker", "-2,45"],
+    ];
+
+    const mapping: BankMapping = {
+      bank_name: "Headerless Fallback Bank",
+      booking_date: ["$1"],
+      booking_text: ["$2", "$3"],
+      booking_type: ["$2"],
+      booking_amount: ["$4"],
+      booking_date_parse_format: "dd.MM.yyyy",
+      without_header: true,
+      detection: {
+        without_header: {
+          column_count: 5,
+          column_markers: ["date", "text", "text", "number", "number"],
+        },
+      },
+    };
+
+    const result = detectHeader(rows, [mapping]);
+
+    expect(result.hasHeader).toBe(false);
+    expect(result.header).toEqual(["01.01.2024", "Kartenzahlung", "Supermarkt", "10,50"]);
+    expect(result.dataRows).toEqual([["02.01.2024", "Kartenzahlung", "Bäcker", "-2,45"]]);
+    expect(result.warning).toBe("Keine Kopfzeile erkannt. Bitte Mapping prüfen.");
+  });
 });
