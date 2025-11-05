@@ -14,8 +14,12 @@ function decodeContent(buffer: ArrayBuffer): string {
   const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
   try {
     const text = utf8Decoder.decode(buffer);
-    const suspiciousCount = (text.match(/[ÃÂ]/g) ?? []).length;
-    if (suspiciousCount > 0 && suspiciousCount / Math.max(text.length, 1) > 0.01) {
+    const misdecodedSequences =
+      text.match(/[ÃÂ][\u0080-\u00BF]/g) ?? [];
+    if (
+      misdecodedSequences.length > 0 &&
+      misdecodedSequences.length / Math.max(text.length, 1) > 0.01
+    ) {
       return decodeWithLegacyEncoding(buffer);
     }
     return text;
