@@ -204,6 +204,56 @@ function isUnifiedTransaction(value) {
   return true;
 }
 
+function isDetectionPayload(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const allowedKeys = new Set(["header_signature", "without_header"]);
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      return false;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, "header_signature")) {
+    const headerSignature = value.header_signature;
+    if (!Array.isArray(headerSignature) || !headerSignature.every((entry) => typeof entry === "string")) {
+      return false;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, "without_header")) {
+    const withoutHeader = value.without_header;
+    if (typeof withoutHeader !== "object" || withoutHeader === null || Array.isArray(withoutHeader)) {
+      return false;
+    }
+
+    const nestedKeys = new Set(["column_count", "column_markers"]);
+    for (const key of Object.keys(withoutHeader)) {
+      if (!nestedKeys.has(key)) {
+        return false;
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(withoutHeader, "column_count") &&
+      (!Number.isInteger(withoutHeader.column_count) || withoutHeader.column_count < 0)
+    ) {
+      return false;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(withoutHeader, "column_markers")) {
+      const markers = withoutHeader.column_markers;
+      if (!Array.isArray(markers) || !markers.every((entry) => typeof entry === "string")) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 function isBankMapping(value) {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -224,6 +274,13 @@ function isBankMapping(value) {
   if (
     Object.prototype.hasOwnProperty.call(maybe, "without_header") &&
     typeof maybe.without_header !== "boolean"
+  ) {
+    return false;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(maybe, "detection") &&
+    maybe.detection !== null &&
+    !isDetectionPayload(maybe.detection)
   ) {
     return false;
   }

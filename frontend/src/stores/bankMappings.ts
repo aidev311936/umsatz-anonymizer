@@ -47,14 +47,14 @@ export const useBankMappingsStore = defineStore("bankMappings", {
       this.loading = true;
       this.error = null;
       try {
-        await storeBankMapping(mapping);
+        const saved = await storeBankMapping(mapping);
         const existingIndex = this.mappings.findIndex(
-          (entry) => entry.bank_name.toLowerCase() === mapping.bank_name.toLowerCase(),
+          (entry) => entry.bank_name.toLowerCase() === saved.bank_name.toLowerCase(),
         );
         if (existingIndex >= 0) {
-          this.mappings.splice(existingIndex, 1, mapping);
+          this.mappings.splice(existingIndex, 1, saved);
         } else {
-          this.mappings.push(mapping);
+          this.mappings.push(saved);
         }
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Bank-Mapping konnte nicht gespeichert werden";

@@ -1,21 +1,20 @@
 import { parseCsv } from "../csv";
 import { detectHeader, type HeaderDetectionResult } from "../headerDetect";
 import { applyMapping } from "../transform";
+import type { BankMapping } from "../types";
 import {
   formatTransactionsForDisplay,
   sanitizeDisplaySettings,
   type DisplaySettings,
 } from "../displaySettings";
-import type { BankMapping, UnifiedTx } from "../types";
-
-export interface MappingSelection extends Omit<BankMapping, "bank_name"> {}
+import type { MappingSelection, UnifiedTx } from "../types";
 
 export async function readCsvFile(file: File): Promise<string[][]> {
   return parseCsv(file);
 }
 
-export function analyzeHeader(rows: string[][]): HeaderDetectionResult {
-  return detectHeader(rows);
+export function analyzeHeader(rows: string[][], mappings: BankMapping[]): HeaderDetectionResult {
+  return detectHeader(rows, mappings);
 }
 
 export function createTransactions(

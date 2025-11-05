@@ -27,14 +27,26 @@
                   <span class="sr-only">Information zum Feld Bankname</span>
                 </span>
               </div>
-              <input
+              <select
+                v-if="importStore.detectedBanks.length > 0"
                 id="bank"
-                v-model="importStore.bankName"
-                list="knownBanks"
+                v-model="selectedDetectedBankOption"
+                class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-describedby="bank-name-hint"
+              >
+                <option v-for="(candidate, index) in importStore.detectedBanks" :key="`${candidate.mapping.bank_name}-${index}`" :value="`${index}`">
+                  {{ candidate.mapping.bank_name }}
+                </option>
+              </select>
+              <input
+                v-else
+                id="bank"
+                v-model="bankNameInput"
                 type="text"
                 placeholder="z. B. comdirect"
                 class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 aria-describedby="bank-name-hint"
+                list="knownBanks"
               />
               <datalist id="knownBanks">
                 <option v-for="bank in bankMappingsStore.knownBanks" :key="bank" :value="bank" />
@@ -145,7 +157,7 @@ import { useBankMappingsStore } from "../stores/bankMappings";
 import { useDisplaySettingsStore } from "../stores/displaySettings";
 import { useImportStore } from "../stores/import";
 import { useTransactionsStore } from "../stores/transactions";
-import type { MappingSelection } from "../services/importService";
+import type { BankMappingDetection, MappingSelection } from "../types";
 
 const importStore = useImportStore();
 const bankMappingsStore = useBankMappingsStore();
@@ -158,6 +170,127 @@ const importSummary = ref("");
 const dialogClosable = ref(false);
 
 const mapping = reactive<{ value: MappingSelection | null }>({ value: importStore.mapping });
+
+const selectedDetectedBankOption = computed({
+  get: () => (importStore.selectedDetectedBankIndex === null ? "" : `${importStore.selectedDetectedBankIndex}`),
+  set: (value: string) => {
+    if (value === "") {
+      importStore.selectDetectedBank(null);
+    } else {
+      importStore.selectDetectedBank(Number.parseInt(value, 10));
+    }
+  },
+});
+
+const bankNameInput = computed({
+  get: () => importStore.bankName,
+  set: (value: string) => {
+    importStore.setBankName(value);
+  },
+});
+
+function isProbablyNumber(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  const normalized = trimmed
+    .replace(/[\s\u00a0]/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(/,/g, ".");
+  if (normalized === "" || normalized === "." || normalized === "+" || normalized === "-") {
+    return false;
+  }
+  if (!/^[-+]?\d*(?:\.\d+)?$/.test(normalized)) {
+    return false;
+  }
+  return !Number.isNaN(Number.parseFloat(normalized));
+}
+
+function isProbablyDate(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  if (!/[0-9]/.test(trimmed)) {
+    return false;
+  }
+  if (/^\d{1,4}$/.test(trimmed)) {
+    return false;
+  }
+
+  const candidates: string[] = [];
+  const dotted = /^([0-9]{1,2})[.\/-]([0-9]{1,2})[.\/-]([0-9]{2,4})$/;
+  const iso = /^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})/;
+
+  const dottedMatch = dotted.exec(trimmed);
+  if (dottedMatch) {
+    const year = dottedMatch[3].padStart(4, "0");
+    const month = dottedMatch[2].padStart(2, "0");
+    const day = dottedMatch[1].padStart(2, "0");
+    candidates.push(`${year}-${month}-${day}`);
+  }
+
+  if (iso.test(trimmed)) {
+    candidates.push(trimmed);
+  }
+
+  candidates.push(trimmed.replace(/\//g, "-").replace(/\./g, "-"));
+
+  return candidates.some((candidate) => !Number.isNaN(Date.parse(candidate)));
+}
+
+function buildColumnMarkers(rows: string[][], columnCount: number): string[] {
+  const markers: string[] = [];
+  for (let index = 0; index < columnCount; index += 1) {
+    const values = rows
+      .map((row) => (row[index] ?? "").toString().trim())
+      .filter((value) => value.length > 0);
+    if (values.length === 0) {
+      markers.push("empty");
+      continue;
+    }
+    if (values.every(isProbablyDate)) {
+      markers.push("date");
+      continue;
+    }
+    if (values.every(isProbablyNumber)) {
+      markers.push("number");
+      continue;
+    }
+    markers.push("text");
+  }
+  return markers;
+}
+
+function buildDetectionHints(selection: MappingSelection): BankMappingDetection | null {
+  const headerSignature = importStore.header
+    .map((entry) => entry?.toString?.() ?? "")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  const detection: BankMappingDetection = {};
+  if (headerSignature.length > 0) {
+    detection.header_signature = headerSignature;
+  }
+
+  if (selection.without_header) {
+    const columnCount = importStore.dataRows.reduce(
+      (max, row) => Math.max(max, row.length),
+      Math.max(headerSignature.length, 0),
+    );
+    if (columnCount > 0) {
+      const sampleRows = [importStore.header, ...importStore.dataRows];
+      const markers = buildColumnMarkers(sampleRows, columnCount);
+      detection.without_header = {
+        column_count: columnCount,
+        column_markers: markers,
+      };
+    }
+  }
+
+  return Object.keys(detection).length > 0 ? detection : null;
+}
 
 function ensureMapping(): MappingSelection {
   if (mapping.value) {
@@ -213,7 +346,10 @@ watch(
     const existing = bankMappingsStore.mappingByBank(bank);
     if (existing) {
       importStore.setMapping({
-        ...existing,
+        booking_date: [...existing.booking_date],
+        booking_text: [...existing.booking_text],
+        booking_type: [...existing.booking_type],
+        booking_amount: [...existing.booking_amount],
         booking_date_parse_format: existing.booking_date_parse_format,
         without_header: existing.without_header,
       });
@@ -233,9 +369,6 @@ watch(
 
 async function handleFileSelected(file: File): Promise<void> {
   await importStore.loadFile(file);
-  if (!importStore.bankName && importStore.detectedBank) {
-    importStore.setBankName(importStore.detectedBank);
-  }
   mapping.value = importStore.mapping;
 }
 
@@ -243,9 +376,11 @@ async function saveMapping(): Promise<void> {
   if (!mapping.value || !importStore.bankName) {
     return;
   }
+  const detection = buildDetectionHints(mapping.value);
   await bankMappingsStore.save({
     bank_name: importStore.bankName,
     ...mapping.value,
+    detection,
   });
 }
 

@@ -1,5 +1,23 @@
+export interface BankMappingDetection {
+  header_signature?: string[];
+  without_header?: {
+    column_count?: number;
+    column_markers?: string[];
+  } | null;
+}
+
 export interface BankMapping {
   bank_name: string;
+  booking_date: string[];
+  booking_text: string[];
+  booking_type: string[];
+  booking_amount: string[];
+  booking_date_parse_format: string;
+  without_header: boolean;
+  detection?: BankMappingDetection | null;
+}
+
+export interface MappingSelection {
   booking_date: string[];
   booking_text: string[];
   booking_type: string[];

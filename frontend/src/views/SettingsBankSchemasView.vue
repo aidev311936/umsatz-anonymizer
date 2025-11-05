@@ -73,7 +73,7 @@
 import { computed, reactive, ref, watchEffect } from "vue";
 import MappingEditor from "../components/MappingEditor.vue";
 import { useBankMappingsStore } from "../stores/bankMappings";
-import type { MappingSelection } from "../services/importService";
+import type { MappingSelection } from "../types";
 
 const bankMappingsStore = useBankMappingsStore();
 const importInput = ref<HTMLInputElement | null>(null);

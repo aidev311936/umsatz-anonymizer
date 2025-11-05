@@ -70,8 +70,8 @@ export async function storeAnonymizationRules(rules: AnonRule[]): Promise<void> 
   saveAnonymizationRules(rules);
 }
 
-export async function storeBankMapping(mapping: BankMapping): Promise<void> {
-  saveBankMapping(mapping);
+export async function storeBankMapping(mapping: BankMapping): Promise<BankMapping> {
+  return saveBankMapping(mapping);
 }
 
 export async function importBankMappingsFromFile(raw: unknown): Promise<BankMapping[] | null> {

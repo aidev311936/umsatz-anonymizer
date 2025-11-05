@@ -1,98 +1,15 @@
 import { defineStore } from "pinia";
-import {
-  analyzeHeader,
-  createDefaultMapping,
-  createTransactions,
-  readCsvFile,
-  type MappingSelection,
-} from "../services/importService";
-import type { HeaderDetectionResult } from "../headerDetect";
+import { analyzeHeader, createDefaultMapping, createTransactions, readCsvFile } from "../services/importService";
+import type { DetectedBankCandidate } from "../headerDetect";
 import { useBankMappingsStore } from "./bankMappings";
-import type { BankMapping, UnifiedTx } from "../types";
-
-const MAPPING_FIELDS: Array<keyof Pick<BankMapping, "booking_date" | "booking_text" | "booking_type" | "booking_amount">> = [
-  "booking_date",
-  "booking_text",
-  "booking_type",
-  "booking_amount",
-];
-
-function normalize(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function matchMappingByHeader(
-  detection: HeaderDetectionResult,
-  mappings: BankMapping[],
-): BankMapping | null {
-  if (detection.header.length === 0) {
-    return null;
-  }
-  const normalizedHeader = detection.header.map(normalize);
-  let bestMatch: { mapping: BankMapping; score: number } | null = null;
-
-  for (const mapping of mappings) {
-    let score = 0;
-    let qualifies = true;
-
-    for (const field of MAPPING_FIELDS) {
-      const columns = mapping[field];
-      if (columns.length === 0) {
-        continue;
-      }
-      const matches = columns.filter((column) => normalizedHeader.includes(normalize(column)));
-      if (matches.length === 0) {
-        qualifies = false;
-        break;
-      }
-      score += matches.length;
-    }
-
-    if (!qualifies) {
-      continue;
-    }
-
-    if (!bestMatch || score > bestMatch.score) {
-      bestMatch = { mapping, score };
-    }
-  }
-
-  return bestMatch?.mapping ?? null;
-}
-
-function resolveDetectedMapping(
-  detection: HeaderDetectionResult,
-  mappings: BankMapping[],
-): BankMapping | null {
-  if (mappings.length === 0) {
-    return null;
-  }
-
-  const detectedName = detection.detectedBank?.trim();
-  if (detectedName) {
-    const normalizedDetected = normalize(detectedName);
-    const exactMatch = mappings.find((mapping) => normalize(mapping.bank_name) === normalizedDetected);
-    if (exactMatch) {
-      return exactMatch;
-    }
-
-    const substringMatch = mappings.find((mapping) => {
-      const normalizedBank = normalize(mapping.bank_name);
-      return normalizedBank.includes(normalizedDetected) || normalizedDetected.includes(normalizedBank);
-    });
-    if (substringMatch) {
-      return substringMatch;
-    }
-  }
-
-  return matchMappingByHeader(detection, mappings);
-}
+import type { MappingSelection, UnifiedTx } from "../types";
 
 interface ImportState {
   bankName: string;
   bookingAccount: string;
   header: string[];
   dataRows: string[][];
+  hasHeader: boolean;
   mapping: MappingSelection | null;
   detectedBank: string | null;
   skippedRows: number;
@@ -100,6 +17,8 @@ interface ImportState {
   loading: boolean;
   error: string | null;
   lastImported: UnifiedTx[];
+  detectedBanks: DetectedBankCandidate[];
+  selectedDetectedBankIndex: number | null;
 }
 
 export const useImportStore = defineStore("import", {
@@ -108,6 +27,7 @@ export const useImportStore = defineStore("import", {
     bookingAccount: "",
     header: [],
     dataRows: [],
+    hasHeader: false,
     mapping: null,
     detectedBank: null,
     skippedRows: 0,
@@ -115,10 +35,18 @@ export const useImportStore = defineStore("import", {
     loading: false,
     error: null,
     lastImported: [],
+    detectedBanks: [],
+    selectedDetectedBankIndex: null,
   }),
   getters: {
-    hasHeader(state): boolean {
-      return state.header.length > 0;
+    selectedDetectedBank(state): DetectedBankCandidate | null {
+      if (state.selectedDetectedBankIndex === null) {
+        return null;
+      }
+      return state.detectedBanks[state.selectedDetectedBankIndex] ?? null;
+    },
+    requiresManualBankSelection(state): boolean {
+      return state.detectedBanks.length !== 1;
     },
   },
   actions: {
@@ -134,12 +62,39 @@ export const useImportStore = defineStore("import", {
     reset(): void {
       this.header = [];
       this.dataRows = [];
+      this.hasHeader = false;
       this.mapping = null;
       this.detectedBank = null;
       this.skippedRows = 0;
       this.warning = null;
       this.lastImported = [];
       this.error = null;
+      this.detectedBanks = [];
+      this.selectedDetectedBankIndex = null;
+    },
+    setDetectedBankCandidates(candidates: DetectedBankCandidate[]): void {
+      this.detectedBanks = [...candidates];
+      if (candidates.length === 0) {
+        this.selectedDetectedBankIndex = null;
+        this.detectedBank = null;
+        return;
+      }
+      const preferredIndex = candidates.findIndex((candidate) => candidate.passed);
+      this.selectDetectedBank(preferredIndex >= 0 ? preferredIndex : 0);
+    },
+    selectDetectedBank(index: number | null): void {
+      if (index === null || index < 0 || index >= this.detectedBanks.length) {
+        this.selectedDetectedBankIndex = null;
+        this.detectedBank = null;
+        return;
+      }
+      this.selectedDetectedBankIndex = index;
+      const candidate = this.detectedBanks[index];
+      const bankName = candidate?.mapping.bank_name ?? "";
+      this.detectedBank = bankName || null;
+      if (bankName) {
+        this.setBankName(bankName);
+      }
     },
     async loadFile(file: File): Promise<void> {
       const bankMappingsStore = useBankMappingsStore();
@@ -148,11 +103,14 @@ export const useImportStore = defineStore("import", {
       try {
         await bankMappingsStore.initialize();
         const rows = await readCsvFile(file);
-        const detection = analyzeHeader(rows);
-        const matchedMapping = resolveDetectedMapping(detection, bankMappingsStore.mappings);
+        const detection = analyzeHeader(rows, bankMappingsStore.mappings);
+        const preferredCandidate =
+          detection.candidates.find((candidate) => candidate.passed) ?? detection.candidates[0] ?? null;
+        const matchedMapping = preferredCandidate?.passed ? preferredCandidate.mapping : null;
         this.header = detection.header;
         this.dataRows = detection.dataRows;
-        this.detectedBank = matchedMapping?.bank_name ?? detection.detectedBank ?? null;
+        this.hasHeader = detection.hasHeader;
+        this.setDetectedBankCandidates(detection.candidates);
         this.skippedRows = detection.skippedRows;
         this.warning = detection.warning ?? null;
         if (!this.mapping || this.mapping.booking_date.length === 0) {
@@ -166,7 +124,11 @@ export const useImportStore = defineStore("import", {
               without_header: matchedMapping.without_header,
             };
           } else {
-            this.mapping = createDefaultMapping(detection.header);
+            const fallback = createDefaultMapping(detection.header);
+            this.mapping = {
+              ...fallback,
+              without_header: detection.hasHeader ? fallback.without_header : true,
+            };
           }
         }
       } catch (error) {
