@@ -10,6 +10,34 @@ function normalizeValue(value: unknown): string {
   return String(value).trim();
 }
 
+function decodeContent(buffer: ArrayBuffer): string {
+  const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+  try {
+    const text = utf8Decoder.decode(buffer);
+    const suspiciousCount = (text.match(/[ÃÂ]/g) ?? []).length;
+    if (suspiciousCount > 0 && suspiciousCount / Math.max(text.length, 1) > 0.01) {
+      return decodeWithLegacyEncoding(buffer);
+    }
+    return text;
+  } catch (error) {
+    return decodeWithLegacyEncoding(buffer);
+  }
+}
+
+function decodeWithLegacyEncoding(buffer: ArrayBuffer): string {
+  const encodings = ["windows-1252", "iso-8859-1", "latin1"];
+  for (const encoding of encodings) {
+    try {
+      return new TextDecoder(encoding).decode(buffer);
+    } catch (error) {
+      if (!(error instanceof RangeError)) {
+        throw error;
+      }
+    }
+  }
+  throw new Error("Unsupported encoding for CSV file");
+}
+
 export function parseCsv(file: File): Promise<string[][]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -17,7 +45,12 @@ export function parseCsv(file: File): Promise<string[][]> {
       reject(reader.error ?? new Error("Datei konnte nicht gelesen werden"));
     };
     reader.onload = () => {
-      const content = typeof reader.result === "string" ? reader.result : new TextDecoder("utf-8").decode(reader.result as ArrayBuffer);
+      const result = reader.result;
+      if (!(result instanceof ArrayBuffer)) {
+        reject(new Error("Ungültiges Dateiformat"));
+        return;
+      }
+      const content = decodeContent(result);
       try {
         Papa.parse(content, {
           delimiter: "",
@@ -37,6 +70,6 @@ export function parseCsv(file: File): Promise<string[][]> {
         reject(error instanceof Error ? error : new Error("Fehler beim CSV-Parsing"));
       }
     };
-    reader.readAsText(file, "utf-8");
+    reader.readAsArrayBuffer(file);
   });
 }
