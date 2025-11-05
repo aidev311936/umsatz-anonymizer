@@ -362,8 +362,14 @@ export function detectHeader(rows: string[][], mappings: BankMapping[]): HeaderD
       }
       hasHeader = false;
     } else {
-      headerIndex = preferredCandidate.headerRowIndex ?? firstNonEmptyIndex;
-      hasHeader = preferredCandidate.matchedHeaderSignature || !preferredCandidate.mapping.without_header;
+      if (preferredCandidate.passed) {
+        headerIndex = preferredCandidate.headerRowIndex ?? firstNonEmptyIndex;
+        hasHeader =
+          preferredCandidate.matchedHeaderSignature || !preferredCandidate.mapping.without_header;
+      } else {
+        headerIndex = firstNonEmptyIndex;
+        hasHeader = true;
+      }
     }
   }
 
