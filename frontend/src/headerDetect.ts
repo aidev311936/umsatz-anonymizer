@@ -362,8 +362,23 @@ export function detectHeader(rows: string[][], mappings: BankMapping[]): HeaderD
       }
       hasHeader = false;
     } else {
-      headerIndex = preferredCandidate.headerRowIndex ?? firstNonEmptyIndex;
-      hasHeader = preferredCandidate.matchedHeaderSignature || !preferredCandidate.mapping.without_header;
+      if (preferredCandidate.passed) {
+        headerIndex = preferredCandidate.headerRowIndex ?? firstNonEmptyIndex;
+        hasHeader =
+          preferredCandidate.matchedHeaderSignature || !preferredCandidate.mapping.without_header;
+      } else if (preferredCandidate.mapping.without_header) {
+        if (preferredCandidate.dataStartIndex !== undefined) {
+          headerIndex = preferredCandidate.dataStartIndex;
+        } else if (preferredCandidate.headerRowIndex !== undefined) {
+          headerIndex = preferredCandidate.headerRowIndex;
+        } else {
+          headerIndex = firstNonEmptyIndex;
+        }
+        hasHeader = false;
+      } else {
+        headerIndex = preferredCandidate.headerRowIndex ?? firstNonEmptyIndex;
+        hasHeader = true;
+      }
     }
   }
 
