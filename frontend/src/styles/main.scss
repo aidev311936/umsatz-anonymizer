@@ -28,6 +28,45 @@ body {
   @apply antialiased;
 }
 
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 1rem;
+  background: radial-gradient(circle at top, rgba(44, 103, 170, 0.12), transparent 60%),
+    radial-gradient(circle at bottom, rgba(164, 200, 73, 0.1), transparent 55%), var(--color-background);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 28rem;
+  padding: 2.5rem;
+  border-radius: 1.5rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  box-shadow: 0 25px 50px -12px rgba(21, 32, 54, 0.25);
+}
+
+.login-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+}
+
+.login-logo img {
+  height: 2.5rem;
+  width: auto;
+}
+
+.text-muted {
+  color: var(--color-text-secondary);
+}
+
 .app-header {
   background-color: var(--color-brand);
   color: var(--color-on-brand);
@@ -70,6 +109,37 @@ body {
   transform: translateY(1px);
 }
 
+.btn-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-on-brand);
+  font-weight: 600;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.btn-accent:hover,
+.btn-accent:focus-visible {
+  background-color: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+}
+
+.btn-accent:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--color-focus-ring);
+}
+
+.btn-accent:disabled {
+  background-color: var(--color-muted);
+  border-color: var(--color-muted);
+  color: var(--color-text-secondary);
+}
+
 .link {
   color: var(--color-brand);
   font-weight: 500;
@@ -97,6 +167,17 @@ body {
   box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
   padding: 2rem;
   color: var(--color-text-primary);
+}
+
+.upload-area {
+  border-style: dashed;
+  background-color: var(--color-brand-soft);
+}
+
+.divider-line {
+  flex: 1 1 0%;
+  height: 1px;
+  background-color: var(--color-muted);
 }
 
 .focus-brand:focus-visible {
@@ -139,6 +220,27 @@ button:disabled,
   color: var(--color-text-secondary);
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: rgba(21, 32, 54, 0.82);
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 36rem;
+  padding: 2.5rem;
+  border-radius: 1.5rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  box-shadow: 0 30px 60px -20px rgba(21, 32, 54, 0.45);
 }
 
 .table-compact th,
