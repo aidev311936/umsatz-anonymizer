@@ -1,16 +1,18 @@
 <template>
   <div class="flex min-h-screen">
-    <aside class="hidden w-72 flex-col bg-slate-900 text-slate-100 lg:flex">
-      <div class="flex items-center justify-between px-6 py-6">
-        <h2 class="text-lg font-semibold">Umsatz Anonymizer</h2>
+    <aside class="app-sidebar hidden lg:flex" aria-label="Hauptnavigation">
+      <div class="app-sidebar__header">
+        <RouterLink to="/" aria-label="Startseite" class="app-logo">
+          <img src="/logo.svg" alt="" />
+        </RouterLink>
       </div>
-      <nav class="flex-1 space-y-1 px-4 py-4">
+      <nav class="app-sidebar__nav">
         <RouterLink
           v-for="item in navigation"
           :key="item.to"
           :to="item.to"
-          class="group flex items-center rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-slate-800"
-          :class="{ 'bg-indigo-600 text-white hover:bg-indigo-500': route.path.startsWith(item.to) }"
+          class="app-nav-link"
+          :class="{ 'is-active': route.path.startsWith(item.to) }"
         >
           <component :is="item.icon" class="mr-3 h-5 w-5" />
           <span>{{ item.label }}</span>
@@ -19,17 +21,21 @@
     </aside>
     <div class="flex min-h-screen flex-1 flex-col">
       <header class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <button class="lg:hidden inline-flex items-center rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+        <button class="menu-trigger lg:hidden">
           Menü
         </button>
-        <div class="flex flex-col">
-          <span class="text-base font-semibold text-slate-900">Dashboard</span>
-          <RouterView name="breadcrumbs" />
+        <div class="flex items-center gap-4">
+          <RouterLink to="/" aria-label="Startseite" class="app-logo">
+            <img src="/logo.svg" alt="" />
+          </RouterLink>
+          <div class="flex flex-col">
+            <span class="text-base font-semibold text-slate-900">Dashboard</span>
+            <div class="text-muted">
+              <RouterView name="breadcrumbs" />
+            </div>
+          </div>
         </div>
-        <button
-          class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-700"
-          @click="$emit('logout')"
-        >
+        <button class="btn-primary" @click="$emit('logout')">
           Abmelden
         </button>
       </header>
