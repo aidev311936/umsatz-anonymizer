@@ -122,13 +122,16 @@
       :message="dialogMessage"
       :bank-name="detectedBankName"
       :closable="dialogClosable"
+      :action-label="progressButtonLabel"
       @close="handleProgressClose"
+      @action="handleProgressAction"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import FileUpload from "../components/FileUpload.vue";
 import ImportProgressDialog from "../components/ImportProgressDialog.vue";
 import TransactionImportsPanel from "../components/TransactionImportsPanel.vue";
@@ -142,6 +145,7 @@ const importStore = useImportStore();
 const bankMappingsStore = useBankMappingsStore();
 const displaySettingsStore = useDisplaySettingsStore();
 const transactionsStore = useTransactionsStore();
+const router = useRouter();
 
 const showProgress = ref(false);
 const progress = ref(0);
@@ -176,6 +180,13 @@ const dialogMessage = computed(() => {
     return importSummary.value || "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
   }
   return "";
+});
+
+const progressButtonLabel = computed(() => {
+  if (importStatus.value === "success") {
+    return "Weiter zu Transaktionen";
+  }
+  return "Schließen";
 });
 
 const mapping = reactive<{ value: MappingSelection | null }>({ value: importStore.mapping });
@@ -334,6 +345,13 @@ async function startImport(): Promise<void> {
   } finally {
     dialogClosable.value = true;
   }
+}
+
+async function handleProgressAction(): Promise<void> {
+  if (importStatus.value === "success") {
+    await router.push({ name: "transactions" });
+  }
+  handleProgressClose();
 }
 
 function handleProgressClose(): void {

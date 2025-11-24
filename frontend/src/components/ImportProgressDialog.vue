@@ -22,9 +22,9 @@
           <button
             type="button"
             class="inline-flex items-center rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
-            @click="emit('close')"
+            @click="emit('action')"
           >
-            Schließen
+            {{ actionLabel }}
           </button>
         </div>
       </div>
@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-const emit = defineEmits<{ (event: "close"): void }>();
+const emit = defineEmits<{ (event: "close"): void; (event: "action"): void }>();
 
 withDefaults(
   defineProps<{
@@ -43,6 +43,7 @@ withDefaults(
     message?: string;
     bankName?: string;
     closable?: boolean;
+    actionLabel?: string;
   }>(),
   {
     title: "Importstatus",
@@ -50,6 +51,7 @@ withDefaults(
     message: "Die CSV-Datei wird verarbeitet…",
     bankName: "",
     closable: false,
+    actionLabel: "Schließen",
   },
 );
 </script>
