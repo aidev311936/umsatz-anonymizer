@@ -272,16 +272,6 @@ watch(
   },
 );
 
-watch(importStatus, (status) => {
-  if (status === "success") {
-    window.setTimeout(() => {
-      if (importStatus.value === "success") {
-        showProgress.value = false;
-      }
-    }, 1500);
-  }
-});
-
 async function handleFileSelected(file: File): Promise<void> {
   await importStore.loadFile(file);
   mapping.value = importStore.mapping;
