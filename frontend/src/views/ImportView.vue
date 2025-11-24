@@ -137,13 +137,12 @@
     <ImportProgressDialog
       :visible="showProgress"
       :progress="progress"
+      :title="dialogTitle"
+      :message="dialogMessage"
+      :bank-name="detectedBankName"
       :closable="dialogClosable"
       @close="handleProgressClose"
-    >
-      <p v-if="importSummary" class="mt-4 text-sm text-slate-600">
-        {{ importSummary }}
-      </p>
-    </ImportProgressDialog>
+    />
   </div>
 </template>
 
@@ -168,6 +167,36 @@ const showProgress = ref(false);
 const progress = ref(0);
 const importSummary = ref("");
 const dialogClosable = ref(false);
+const importStatus = ref<"idle" | "running" | "success" | "error">("idle");
+
+const detectedBankName = computed(() => importStore.detectedBank ?? importStore.bankName);
+const dialogTitle = computed(() => {
+  if (importStatus.value === "running") {
+    return "Import läuft";
+  }
+  if (importStatus.value === "success") {
+    return "Import abgeschlossen";
+  }
+  if (importStatus.value === "error") {
+    return "Import fehlgeschlagen";
+  }
+  return "Importstatus";
+});
+const dialogMessage = computed(() => {
+  if (importStatus.value === "running") {
+    if (detectedBankName.value) {
+      return `Der Import für ${detectedBankName.value} wird durchgeführt.`;
+    }
+    return "Die CSV-Datei wird verarbeitet…";
+  }
+  if (importStatus.value === "success") {
+    return importSummary.value || "Import abgeschlossen.";
+  }
+  if (importStatus.value === "error") {
+    return importSummary.value || "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
+  }
+  return "";
+});
 
 const mapping = reactive<{ value: MappingSelection | null }>({ value: importStore.mapping });
 
@@ -390,6 +419,7 @@ async function startImport(): Promise<void> {
   }
   showProgress.value = true;
   dialogClosable.value = false;
+  importStatus.value = "running";
   progress.value = 20;
   importSummary.value = "";
   try {
@@ -401,10 +431,15 @@ async function startImport(): Promise<void> {
     });
     progress.value = 100;
     importSummary.value = `${transactions.length} Transaktionen importiert.`;
+    importStatus.value = "success";
   } catch (error) {
     console.error("Import failed", error);
     progress.value = 100;
-    importSummary.value = "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
+    importSummary.value =
+      error instanceof Error
+        ? `Import fehlgeschlagen: ${error.message}`
+        : "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
+    importStatus.value = "error";
   } finally {
     dialogClosable.value = true;
   }
@@ -413,6 +448,7 @@ async function startImport(): Promise<void> {
 function handleProgressClose(): void {
   showProgress.value = false;
   progress.value = 0;
+  importStatus.value = "idle";
   dialogClosable.value = false;
 }
 </script>
