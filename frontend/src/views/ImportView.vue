@@ -4,7 +4,7 @@
       <div class="lg:col-span-2 space-y-6">
         <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 class="text-lg font-semibold text-slate-900">CSV-Import</h2>
-          <p class="mt-2 text-sm text-slate-600">Wählen Sie eine CSV-Datei und ordnen Sie die Spalten dem Zielschema zu.</p>
+          <p class="mt-2 text-sm text-slate-600">Wählen Sie eine CSV-Datei. Bank-Mappings werden automatisch angewendet.</p>
           <div class="mt-6 space-y-4">
             <FileUpload @file-selected="handleFileSelected" />
             <div>
@@ -34,6 +34,7 @@
                 class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 aria-describedby="bank-name-hint"
               >
+                <option value="" disabled>Bitte Bank auswählen</option>
                 <option v-for="(candidate, index) in importStore.detectedBanks" :key="`${candidate.mapping.bank_name}-${index}`" :value="`${index}`">
                   {{ candidate.mapping.bank_name }}
                 </option>
@@ -92,24 +93,19 @@
             </p>
             <p v-if="importStore.warning" class="text-sm font-medium text-amber-600">{{ importStore.warning }}</p>
             <p v-if="importStore.error" class="text-sm font-medium text-rose-600">{{ importStore.error }}</p>
-          </div>
-        </div>
-        <div v-if="importStore.header.length > 0" class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-slate-900">Mapping auf Zielschema</h2>
-            <button
-              type="button"
-              class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
-              @click="saveMapping"
-            >
-              Mapping speichern
-            </button>
-          </div>
-          <p class="mt-2 text-sm text-slate-600">
-            Ordnen Sie die CSV-Spalten den Zielspalten zu. Bereits gespeicherte Mappings werden beim erneuten Import automatisch geladen.
-          </p>
-          <div class="mt-6">
-            <MappingEditor :headers="importStore.header" v-model="mappingValue" />
+            <div class="flex flex-wrap items-center gap-4 pt-2">
+              <button
+                type="button"
+                class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+                :disabled="!canImport"
+                @click="startImport"
+              >
+                Import starten
+              </button>
+              <span v-if="importSummary" class="text-sm text-slate-600">
+                {{ importSummary }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -119,55 +115,79 @@
         @refresh="transactionsStore.refreshHistory"
       />
     </section>
-    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
-          :disabled="!canImport"
-          @click="startImport"
-        >
-          Import starten
-        </button>
-        <span v-if="importSummary" class="text-sm text-slate-600">
-          {{ importSummary }}
-        </span>
-      </div>
-    </section>
     <ImportProgressDialog
       :visible="showProgress"
       :progress="progress"
+      :title="dialogTitle"
+      :message="dialogMessage"
+      :bank-name="detectedBankName"
       :closable="dialogClosable"
+      :action-label="progressButtonLabel"
       @close="handleProgressClose"
-    >
-      <p v-if="importSummary" class="mt-4 text-sm text-slate-600">
-        {{ importSummary }}
-      </p>
-    </ImportProgressDialog>
+      @action="handleProgressAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import FileUpload from "../components/FileUpload.vue";
 import ImportProgressDialog from "../components/ImportProgressDialog.vue";
-import MappingEditor from "../components/MappingEditor.vue";
 import TransactionImportsPanel from "../components/TransactionImportsPanel.vue";
 import { useBankMappingsStore } from "../stores/bankMappings";
 import { useDisplaySettingsStore } from "../stores/displaySettings";
 import { useImportStore } from "../stores/import";
 import { useTransactionsStore } from "../stores/transactions";
-import type { BankMappingDetection, MappingSelection } from "../types";
+import type { MappingSelection } from "../types";
 
 const importStore = useImportStore();
 const bankMappingsStore = useBankMappingsStore();
 const displaySettingsStore = useDisplaySettingsStore();
 const transactionsStore = useTransactionsStore();
+const router = useRouter();
 
 const showProgress = ref(false);
 const progress = ref(0);
 const importSummary = ref("");
 const dialogClosable = ref(false);
+const importStatus = ref<"idle" | "running" | "success" | "error">("idle");
+
+const detectedBankName = computed(() => importStore.detectedBank ?? importStore.bankName);
+const dialogTitle = computed(() => {
+  if (importStatus.value === "running") {
+    return "Import läuft";
+  }
+  if (importStatus.value === "success") {
+    return "Import abgeschlossen";
+  }
+  if (importStatus.value === "error") {
+    return "Import fehlgeschlagen";
+  }
+  return "Importstatus";
+});
+const dialogMessage = computed(() => {
+  if (importStatus.value === "running") {
+    if (detectedBankName.value) {
+      return `Der Import für ${detectedBankName.value} wird durchgeführt.`;
+    }
+    return "Die CSV-Datei wird verarbeitet…";
+  }
+  if (importStatus.value === "success") {
+    return importSummary.value || "Import abgeschlossen.";
+  }
+  if (importStatus.value === "error") {
+    return importSummary.value || "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
+  }
+  return "";
+});
+
+const progressButtonLabel = computed(() => {
+  if (importStatus.value === "success") {
+    return "Weiter zu Transaktionen";
+  }
+  return "Schließen";
+});
 
 const mapping = reactive<{ value: MappingSelection | null }>({ value: importStore.mapping });
 
@@ -188,109 +208,6 @@ const bankNameInput = computed({
     importStore.setBankName(value);
   },
 });
-
-function isProbablyNumber(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return false;
-  }
-  const normalized = trimmed
-    .replace(/[\s\u00a0]/g, "")
-    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-    .replace(/,/g, ".");
-  if (normalized === "" || normalized === "." || normalized === "+" || normalized === "-") {
-    return false;
-  }
-  if (!/^[-+]?\d*(?:\.\d+)?$/.test(normalized)) {
-    return false;
-  }
-  return !Number.isNaN(Number.parseFloat(normalized));
-}
-
-function isProbablyDate(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return false;
-  }
-  if (!/[0-9]/.test(trimmed)) {
-    return false;
-  }
-  if (/^\d{1,4}$/.test(trimmed)) {
-    return false;
-  }
-
-  const candidates: string[] = [];
-  const dotted = /^([0-9]{1,2})[.\/-]([0-9]{1,2})[.\/-]([0-9]{2,4})$/;
-  const iso = /^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})/;
-
-  const dottedMatch = dotted.exec(trimmed);
-  if (dottedMatch) {
-    const year = dottedMatch[3].padStart(4, "0");
-    const month = dottedMatch[2].padStart(2, "0");
-    const day = dottedMatch[1].padStart(2, "0");
-    candidates.push(`${year}-${month}-${day}`);
-  }
-
-  if (iso.test(trimmed)) {
-    candidates.push(trimmed);
-  }
-
-  candidates.push(trimmed.replace(/\//g, "-").replace(/\./g, "-"));
-
-  return candidates.some((candidate) => !Number.isNaN(Date.parse(candidate)));
-}
-
-function buildColumnMarkers(rows: string[][], columnCount: number): string[] {
-  const markers: string[] = [];
-  for (let index = 0; index < columnCount; index += 1) {
-    const values = rows
-      .map((row) => (row[index] ?? "").toString().trim())
-      .filter((value) => value.length > 0);
-    if (values.length === 0) {
-      markers.push("empty");
-      continue;
-    }
-    if (values.every(isProbablyDate)) {
-      markers.push("date");
-      continue;
-    }
-    if (values.every(isProbablyNumber)) {
-      markers.push("number");
-      continue;
-    }
-    markers.push("text");
-  }
-  return markers;
-}
-
-function buildDetectionHints(selection: MappingSelection): BankMappingDetection | null {
-  const headerSignature = importStore.header
-    .map((entry) => entry?.toString?.() ?? "")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-
-  const detection: BankMappingDetection = {};
-  if (headerSignature.length > 0) {
-    detection.header_signature = headerSignature;
-  }
-
-  if (selection.without_header) {
-    const columnCount = importStore.dataRows.reduce(
-      (max, row) => Math.max(max, row.length),
-      Math.max(headerSignature.length, 0),
-    );
-    if (columnCount > 0) {
-      const sampleRows = [importStore.header, ...importStore.dataRows];
-      const markers = buildColumnMarkers(sampleRows, columnCount);
-      detection.without_header = {
-        column_count: columnCount,
-        column_markers: markers,
-      };
-    }
-  }
-
-  return Object.keys(detection).length > 0 ? detection : null;
-}
 
 function ensureMapping(): MappingSelection {
   if (mapping.value) {
@@ -372,47 +289,75 @@ async function handleFileSelected(file: File): Promise<void> {
   mapping.value = importStore.mapping;
 }
 
-async function saveMapping(): Promise<void> {
-  if (!mapping.value || !importStore.bankName) {
-    return;
-  }
-  const detection = buildDetectionHints(mapping.value);
-  await bankMappingsStore.save({
-    bank_name: importStore.bankName,
-    ...mapping.value,
-    detection,
-  });
-}
-
 async function startImport(): Promise<void> {
   if (!canImport.value || !mapping.value) {
     return;
   }
   showProgress.value = true;
   dialogClosable.value = false;
+  importStatus.value = "running";
   progress.value = 20;
   importSummary.value = "";
   try {
+    importStore.error = null;
     const transactions = importStore.importTransactions(displaySettingsStore.resolvedSettings);
+    if (importStore.error) {
+      throw new Error(importStore.error);
+    }
+    if (transactions.length === 0) {
+      throw new Error("Es wurden keine Transaktionen importiert. Bitte CSV-Format und Mapping prüfen.");
+    }
     progress.value = 60;
-    await transactionsStore.appendImported(transactions, {
+    if (importStore.error) {
+      throw new Error(importStore.error);
+    }
+    if (!transactions || transactions.length === 0) {
+      throw new Error("Es wurden keine Transaktionen erkannt. Bitte prüfen Sie CSV-Datei und Mapping.");
+    }
+    const result = await transactionsStore.appendImported(transactions, {
       bankName: importStore.bankName,
       bookingAccount: importStore.bookingAccount,
     });
     progress.value = 100;
-    importSummary.value = `${transactions.length} Transaktionen importiert.`;
+    const importedText =
+      result.addedCount === 1
+        ? "1 Umsatz importiert"
+        : `${result.addedCount} Umsätze importiert`;
+    const duplicatesText =
+      result.skippedDuplicates === 1
+        ? "1 Doppelgänger erkannt"
+        : `${result.skippedDuplicates} Doppelgänger erkannt`;
+    if (result.skippedDuplicates > 0) {
+      importSummary.value = `${duplicatesText}, ${importedText}.`;
+    } else {
+      importSummary.value = `${importedText}.`;
+    }
+    importStatus.value = "success";
   } catch (error) {
     console.error("Import failed", error);
     progress.value = 100;
-    importSummary.value = "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
+    importSummary.value =
+      importStore.error ||
+      (error instanceof Error
+        ? `Import fehlgeschlagen: ${error.message}`
+        : "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.");
+    importStatus.value = "error";
   } finally {
     dialogClosable.value = true;
   }
 }
 
+async function handleProgressAction(): Promise<void> {
+  if (importStatus.value === "success") {
+    await router.push({ name: "transactions" });
+  }
+  handleProgressClose();
+}
+
 function handleProgressClose(): void {
   showProgress.value = false;
   progress.value = 0;
+  importStatus.value = "idle";
   dialogClosable.value = false;
 }
 </script>
