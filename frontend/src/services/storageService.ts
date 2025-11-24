@@ -17,6 +17,7 @@ import {
   saveDisplaySettings,
   saveMaskedTransactions,
   saveTransactions,
+  type AppendTransactionsResult,
 } from "../storage";
 import type {
   AnonRule,
@@ -85,12 +86,13 @@ export async function importRulesFromFile(raw: unknown): Promise<AnonRule[] | nu
 
 export async function appendImportedTransactions(
   entries: UnifiedTx[],
-  options: {
+  _options: {
     bankName: string;
     bookingAccount: string;
   },
-): Promise<void> {
-  await appendTransactions(entries, options.bankName, options.bookingAccount);
+): Promise<AppendTransactionsResult> {
+  const result = await appendTransactions(entries);
+  return result;
 }
 
 export async function fetchTransactionImportHistory(): Promise<TransactionImportSummary[]> {
@@ -111,4 +113,5 @@ export type {
   DisplaySettings,
   TransactionImportSummary,
   UnifiedTx,
+  AppendTransactionsResult,
 };
