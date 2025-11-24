@@ -4,7 +4,7 @@
       <div class="lg:col-span-2 space-y-6">
         <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 class="text-lg font-semibold text-slate-900">CSV-Import</h2>
-          <p class="mt-2 text-sm text-slate-600">Wählen Sie eine CSV-Datei und ordnen Sie die Spalten dem Zielschema zu.</p>
+          <p class="mt-2 text-sm text-slate-600">Wählen Sie eine CSV-Datei. Bank-Mappings werden automatisch angewendet.</p>
           <div class="mt-6 space-y-4">
             <FileUpload @file-selected="handleFileSelected" />
             <div>
@@ -92,24 +92,19 @@
             </p>
             <p v-if="importStore.warning" class="text-sm font-medium text-amber-600">{{ importStore.warning }}</p>
             <p v-if="importStore.error" class="text-sm font-medium text-rose-600">{{ importStore.error }}</p>
-          </div>
-        </div>
-        <div v-if="importStore.header.length > 0" class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-slate-900">Mapping auf Zielschema</h2>
-            <button
-              type="button"
-              class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
-              @click="saveMapping"
-            >
-              Mapping speichern
-            </button>
-          </div>
-          <p class="mt-2 text-sm text-slate-600">
-            Ordnen Sie die CSV-Spalten den Zielspalten zu. Bereits gespeicherte Mappings werden beim erneuten Import automatisch geladen.
-          </p>
-          <div class="mt-6">
-            <MappingEditor :headers="importStore.header" v-model="mappingValue" />
+            <div class="flex flex-wrap items-center gap-4 pt-2">
+              <button
+                type="button"
+                class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+                :disabled="!canImport"
+                @click="startImport"
+              >
+                Import starten
+              </button>
+              <span v-if="importSummary" class="text-sm text-slate-600">
+                {{ importSummary }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -118,21 +113,6 @@
         :history="transactionsStore.history"
         @refresh="transactionsStore.refreshHistory"
       />
-    </section>
-    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
-          :disabled="!canImport"
-          @click="startImport"
-        >
-          Import starten
-        </button>
-        <span v-if="importSummary" class="text-sm text-slate-600">
-          {{ importSummary }}
-        </span>
-      </div>
     </section>
     <ImportProgressDialog
       :visible="showProgress"
@@ -150,13 +130,12 @@
 import { computed, reactive, ref, watch } from "vue";
 import FileUpload from "../components/FileUpload.vue";
 import ImportProgressDialog from "../components/ImportProgressDialog.vue";
-import MappingEditor from "../components/MappingEditor.vue";
 import TransactionImportsPanel from "../components/TransactionImportsPanel.vue";
 import { useBankMappingsStore } from "../stores/bankMappings";
 import { useDisplaySettingsStore } from "../stores/displaySettings";
 import { useImportStore } from "../stores/import";
 import { useTransactionsStore } from "../stores/transactions";
-import type { BankMappingDetection, MappingSelection } from "../types";
+import type { MappingSelection } from "../types";
 
 const importStore = useImportStore();
 const bankMappingsStore = useBankMappingsStore();
@@ -217,109 +196,6 @@ const bankNameInput = computed({
     importStore.setBankName(value);
   },
 });
-
-function isProbablyNumber(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return false;
-  }
-  const normalized = trimmed
-    .replace(/[\s\u00a0]/g, "")
-    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-    .replace(/,/g, ".");
-  if (normalized === "" || normalized === "." || normalized === "+" || normalized === "-") {
-    return false;
-  }
-  if (!/^[-+]?\d*(?:\.\d+)?$/.test(normalized)) {
-    return false;
-  }
-  return !Number.isNaN(Number.parseFloat(normalized));
-}
-
-function isProbablyDate(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return false;
-  }
-  if (!/[0-9]/.test(trimmed)) {
-    return false;
-  }
-  if (/^\d{1,4}$/.test(trimmed)) {
-    return false;
-  }
-
-  const candidates: string[] = [];
-  const dotted = /^([0-9]{1,2})[.\/-]([0-9]{1,2})[.\/-]([0-9]{2,4})$/;
-  const iso = /^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})/;
-
-  const dottedMatch = dotted.exec(trimmed);
-  if (dottedMatch) {
-    const year = dottedMatch[3].padStart(4, "0");
-    const month = dottedMatch[2].padStart(2, "0");
-    const day = dottedMatch[1].padStart(2, "0");
-    candidates.push(`${year}-${month}-${day}`);
-  }
-
-  if (iso.test(trimmed)) {
-    candidates.push(trimmed);
-  }
-
-  candidates.push(trimmed.replace(/\//g, "-").replace(/\./g, "-"));
-
-  return candidates.some((candidate) => !Number.isNaN(Date.parse(candidate)));
-}
-
-function buildColumnMarkers(rows: string[][], columnCount: number): string[] {
-  const markers: string[] = [];
-  for (let index = 0; index < columnCount; index += 1) {
-    const values = rows
-      .map((row) => (row[index] ?? "").toString().trim())
-      .filter((value) => value.length > 0);
-    if (values.length === 0) {
-      markers.push("empty");
-      continue;
-    }
-    if (values.every(isProbablyDate)) {
-      markers.push("date");
-      continue;
-    }
-    if (values.every(isProbablyNumber)) {
-      markers.push("number");
-      continue;
-    }
-    markers.push("text");
-  }
-  return markers;
-}
-
-function buildDetectionHints(selection: MappingSelection): BankMappingDetection | null {
-  const headerSignature = importStore.header
-    .map((entry) => entry?.toString?.() ?? "")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-
-  const detection: BankMappingDetection = {};
-  if (headerSignature.length > 0) {
-    detection.header_signature = headerSignature;
-  }
-
-  if (selection.without_header) {
-    const columnCount = importStore.dataRows.reduce(
-      (max, row) => Math.max(max, row.length),
-      Math.max(headerSignature.length, 0),
-    );
-    if (columnCount > 0) {
-      const sampleRows = [importStore.header, ...importStore.dataRows];
-      const markers = buildColumnMarkers(sampleRows, columnCount);
-      detection.without_header = {
-        column_count: columnCount,
-        column_markers: markers,
-      };
-    }
-  }
-
-  return Object.keys(detection).length > 0 ? detection : null;
-}
 
 function ensureMapping(): MappingSelection {
   if (mapping.value) {
@@ -396,21 +272,19 @@ watch(
   },
 );
 
+watch(importStatus, (status) => {
+  if (status === "success") {
+    window.setTimeout(() => {
+      if (importStatus.value === "success") {
+        showProgress.value = false;
+      }
+    }, 1500);
+  }
+});
+
 async function handleFileSelected(file: File): Promise<void> {
   await importStore.loadFile(file);
   mapping.value = importStore.mapping;
-}
-
-async function saveMapping(): Promise<void> {
-  if (!mapping.value || !importStore.bankName) {
-    return;
-  }
-  const detection = buildDetectionHints(mapping.value);
-  await bankMappingsStore.save({
-    bank_name: importStore.bankName,
-    ...mapping.value,
-    detection,
-  });
 }
 
 async function startImport(): Promise<void> {
@@ -424,6 +298,12 @@ async function startImport(): Promise<void> {
   importSummary.value = "";
   try {
     const transactions = importStore.importTransactions(displaySettingsStore.resolvedSettings);
+    if (importStore.error) {
+      throw new Error(importStore.error);
+    }
+    if (transactions.length === 0) {
+      throw new Error("Es wurden keine Transaktionen importiert. Bitte CSV-Format und Mapping prüfen.");
+    }
     progress.value = 60;
     await transactionsStore.appendImported(transactions, {
       bankName: importStore.bankName,
