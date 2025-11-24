@@ -302,12 +302,24 @@ async function startImport(): Promise<void> {
     if (!transactions || transactions.length === 0) {
       throw new Error("Es wurden keine Transaktionen erkannt. Bitte prüfen Sie CSV-Datei und Mapping.");
     }
-    await transactionsStore.appendImported(transactions, {
+    const result = await transactionsStore.appendImported(transactions, {
       bankName: importStore.bankName,
       bookingAccount: importStore.bookingAccount,
     });
     progress.value = 100;
-    importSummary.value = `${transactions.length} Transaktionen importiert.`;
+    const importedText =
+      result.addedCount === 1
+        ? "1 Umsatz importiert"
+        : `${result.addedCount} Umsätze importiert`;
+    const duplicatesText =
+      result.skippedDuplicates === 1
+        ? "1 Doppelgänger erkannt"
+        : `${result.skippedDuplicates} Doppelgänger erkannt`;
+    if (result.skippedDuplicates > 0) {
+      importSummary.value = `${duplicatesText}, ${importedText}.`;
+    } else {
+      importSummary.value = `${importedText}.`;
+    }
     importStatus.value = "success";
   } catch (error) {
     console.error("Import failed", error);

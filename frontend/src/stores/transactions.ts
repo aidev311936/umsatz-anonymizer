@@ -12,6 +12,7 @@ import {
   storeTransactions,
   type TransactionImportSummary,
   type UnifiedTx,
+  type AppendTransactionsResult,
 } from "../services/storageService";
 
 interface TransactionsState {
@@ -118,16 +119,17 @@ export const useTransactionsStore = defineStore("transactions", {
     async appendImported(
       entries: UnifiedTx[],
       options: { bankName: string; bookingAccount: string },
-    ): Promise<void> {
+    ): Promise<AppendTransactionsResult> {
       this.saving = true;
       this.error = null;
       try {
-        await appendImportedTransactions(entries, options);
+        const result = await appendImportedTransactions(entries, options);
         this.transactions = [...getTransactions()];
         this.history = [...getTransactionImports()];
         this.clearAnonymization();
         this.setMaskedTransactions([]);
         await storeMaskedTransactions([]);
+        return result;
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Import konnte nicht gespeichert werden";
         throw error;

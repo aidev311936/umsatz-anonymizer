@@ -76,14 +76,18 @@ describe("transactions store", () => {
 
     storageServiceMocks.getTransactions.mockReturnValue(importedEntries);
     storageServiceMocks.getTransactionImports.mockReturnValue(importedHistory);
-    storageServiceMocks.appendImportedTransactions.mockResolvedValue(undefined);
+    storageServiceMocks.appendImportedTransactions.mockResolvedValue({
+      transactions: importedEntries,
+      addedCount: importedEntries.length,
+      skippedDuplicates: 0,
+    });
 
     const store = useTransactionsStore();
     store.setMaskedTransactions(existingMasked);
     store.anonymized = [...existingMasked];
     store.anonymizationWarnings = ["warning"];
 
-    await store.appendImported(importedEntries, { bankName: "Test Bank", bookingAccount: "0001" });
+    const result = await store.appendImported(importedEntries, { bankName: "Test Bank", bookingAccount: "0001" });
 
     expect(storageServiceMocks.appendImportedTransactions).toHaveBeenCalledWith(importedEntries, {
       bankName: "Test Bank",
@@ -95,6 +99,11 @@ describe("transactions store", () => {
     expect(store.anonymizationWarnings).toEqual([]);
     expect(store.maskedTransactions).toEqual([]);
     expect(storageServiceMocks.storeMaskedTransactions).toHaveBeenCalledWith([]);
+    expect(result).toEqual({
+      transactions: importedEntries,
+      addedCount: importedEntries.length,
+      skippedDuplicates: 0,
+    });
   });
 });
 
