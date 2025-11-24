@@ -77,12 +77,14 @@ export const useImportStore = defineStore("import", {
       if (candidates.length === 0) {
         this.selectedDetectedBankIndex = null;
         this.detectedBank = null;
+        this.bankName = "";
         return;
       }
       const preferredIndex = candidates.findIndex((candidate) => candidate.passed);
       if (preferredIndex === -1) {
         this.selectedDetectedBankIndex = null;
         this.detectedBank = null;
+        this.bankName = "";
         return;
       }
       this.selectDetectedBank(preferredIndex);
