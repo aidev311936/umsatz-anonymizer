@@ -423,8 +423,15 @@ async function startImport(): Promise<void> {
   progress.value = 20;
   importSummary.value = "";
   try {
+    importStore.error = null;
     const transactions = importStore.importTransactions(displaySettingsStore.resolvedSettings);
     progress.value = 60;
+    if (importStore.error) {
+      throw new Error(importStore.error);
+    }
+    if (!transactions || transactions.length === 0) {
+      throw new Error("Es wurden keine Transaktionen erkannt. Bitte prüfen Sie CSV-Datei und Mapping.");
+    }
     await transactionsStore.appendImported(transactions, {
       bankName: importStore.bankName,
       bookingAccount: importStore.bookingAccount,
@@ -436,9 +443,10 @@ async function startImport(): Promise<void> {
     console.error("Import failed", error);
     progress.value = 100;
     importSummary.value =
-      error instanceof Error
+      importStore.error ||
+      (error instanceof Error
         ? `Import fehlgeschlagen: ${error.message}`
-        : "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.";
+        : "Import fehlgeschlagen. Bitte prüfen Sie die Konsole für Details.");
     importStatus.value = "error";
   } finally {
     dialogClosable.value = true;
