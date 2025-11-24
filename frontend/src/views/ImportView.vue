@@ -34,6 +34,7 @@
                 class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 aria-describedby="bank-name-hint"
               >
+                <option value="" disabled>Bitte Bank auswählen</option>
                 <option v-for="(candidate, index) in importStore.detectedBanks" :key="`${candidate.mapping.bank_name}-${index}`" :value="`${index}`">
                   {{ candidate.mapping.bank_name }}
                 </option>

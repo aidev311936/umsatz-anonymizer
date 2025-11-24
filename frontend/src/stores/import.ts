@@ -80,7 +80,12 @@ export const useImportStore = defineStore("import", {
         return;
       }
       const preferredIndex = candidates.findIndex((candidate) => candidate.passed);
-      this.selectDetectedBank(preferredIndex >= 0 ? preferredIndex : 0);
+      if (preferredIndex === -1) {
+        this.selectedDetectedBankIndex = null;
+        this.detectedBank = null;
+        return;
+      }
+      this.selectDetectedBank(preferredIndex);
     },
     selectDetectedBank(index: number | null): void {
       if (index === null || index < 0 || index >= this.detectedBanks.length) {
