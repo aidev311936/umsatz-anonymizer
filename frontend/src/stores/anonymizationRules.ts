@@ -46,7 +46,9 @@ export const useAnonymizationRulesStore = defineStore("anonymizationRules", {
       this.error = null;
       try {
         await storeAnonymizationRules(rules);
-        this.rules = [...rules];
+        const { rules: savedRules, version } = getAnonymizationRules();
+        this.rules = [...savedRules];
+        this.version = version;
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Regeln konnten nicht gespeichert werden";
         throw error;
@@ -60,7 +62,9 @@ export const useAnonymizationRulesStore = defineStore("anonymizationRules", {
       try {
         const rules = await importRulesFromFile(raw);
         if (rules) {
-          this.rules = rules;
+          const { rules: savedRules, version } = getAnonymizationRules();
+          this.rules = savedRules;
+          this.version = version;
         }
         return rules;
       } catch (error) {

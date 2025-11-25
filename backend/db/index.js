@@ -1,6 +1,30 @@
 const { Pool } = require("pg");
 
 const MASKED_SNAPSHOT_CATEGORY = "__masked_snapshot__";
+const ANON_RULES_KEY = "anonymization_rules_v1";
+const DEFAULT_ANON_RULES = {
+  version: 1,
+  rules: [
+    {
+      id: "iban_mask",
+      fields: ["booking_text"],
+      type: "regex",
+      pattern: "(DE\\d{2})[\\s-]?((?:\\d[\\s-]?){18})",
+      flags: "gi",
+      replacement: "$1 XXXX XXXX XXXX XXXX XX",
+      enabled: true,
+    },
+    {
+      id: "digits_mask",
+      fields: ["booking_text"],
+      type: "regex",
+      pattern: "\\d{3,}",
+      flags: "g",
+      replacement: "XXX",
+      enabled: true,
+    },
+  ],
+};
 
 function createPool(options = {}) {
   const connectionString = options.connectionString ?? process.env.DATABASE_URL;
@@ -305,6 +329,123 @@ function createDb(pool) {
     return sanitized ?? {};
   }
 
+  function sanitizeRuleFields(fields) {
+    if (!Array.isArray(fields)) {
+      return [];
+    }
+    const sanitized = fields
+      .filter((entry) => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => ALLOWED_TRANSACTION_KEYS.has(entry));
+    return sanitized.length > 0 ? sanitized : ["booking_text"];
+  }
+
+  function normalizeRuleForStorage(rule) {
+    const enabled = rule.enabled !== false;
+    const id = typeof rule.id === "string" ? rule.id.trim() : "";
+    if (rule.type === "regex") {
+      return {
+        id,
+        rule_type: "regex",
+        fields: sanitizeRuleFields(rule.fields),
+        pattern: rule.pattern,
+        flags: rule.flags ?? null,
+        replacement: rule.replacement,
+        mask_strategy: null,
+        mask_char: null,
+        min_len: null,
+        mask_percent: null,
+        enabled,
+      };
+    }
+    return {
+      id,
+      rule_type: "mask",
+      fields: sanitizeRuleFields(rule.fields),
+      pattern: null,
+      flags: null,
+      replacement: null,
+      mask_strategy: rule.maskStrategy,
+      mask_char: typeof rule.maskChar === "string" ? rule.maskChar : null,
+      min_len: Number.isInteger(rule.minLen) ? rule.minLen : null,
+      mask_percent:
+        typeof rule.maskPercent === "number" && Number.isFinite(rule.maskPercent)
+          ? rule.maskPercent
+          : null,
+      enabled,
+    };
+  }
+
+  function rowToAnonymizationRule(row) {
+    const fields = Array.isArray(row.fields)
+      ? row.fields.filter((entry) => typeof entry === "string")
+      : [];
+    const enabled = row.enabled !== false;
+    if (row.rule_type === "mask") {
+      const rule = {
+        id: row.id,
+        type: "mask",
+        fields,
+        maskStrategy: row.mask_strategy ?? "full",
+        maskChar: typeof row.mask_char === "string" ? row.mask_char : undefined,
+        minLen: Number.isInteger(row.min_len) ? row.min_len : undefined,
+        maskPercent:
+          typeof row.mask_percent === "number" && Number.isFinite(row.mask_percent)
+            ? row.mask_percent
+            : undefined,
+        enabled,
+      };
+      return rule;
+    }
+    return {
+      id: row.id,
+      type: "regex",
+      fields,
+      pattern: row.pattern ?? "",
+      flags: typeof row.flags === "string" ? row.flags : undefined,
+      replacement: row.replacement ?? "",
+      enabled,
+    };
+  }
+
+  function sanitizeAnonymizationRules(value) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((rule) => rowToAnonymizationRule(normalizeRuleForStorage(rule)))
+      .filter((rule) => rule.id.trim().length > 0);
+  }
+
+  function readRulesFromSettings(settings) {
+    const container = settings?.[ANON_RULES_KEY];
+    if (container && typeof container === "object" && !Array.isArray(container) && "rules" in container) {
+      const rules = sanitizeAnonymizationRules(container.rules);
+      const version = Number.isInteger(container.version) ? container.version : DEFAULT_ANON_RULES.version;
+      return {
+        rules,
+        version,
+      };
+    }
+    return DEFAULT_ANON_RULES;
+  }
+
+  async function persistRulesInSettings(token, payload) {
+    const settings = await getSettings(token);
+    const normalized = {
+      ...settings,
+      [ANON_RULES_KEY]: {
+        version: payload.version ?? DEFAULT_ANON_RULES.version,
+        rules: sanitizeAnonymizationRules(payload.rules),
+      },
+    };
+    const saved = await updateSettings(token, normalized);
+    if (!saved) {
+      return DEFAULT_ANON_RULES;
+    }
+    return readRulesFromSettings(saved);
+  }
+
   async function listBankMappings(token) {
     const result = await pool.query(
       `SELECT bank_name,
@@ -365,6 +506,59 @@ function createDb(pool) {
     );
   }
 
+  async function listAnonymizationRules(token) {
+    const settings = await getSettings(token);
+    return readRulesFromSettings(settings).rules;
+  }
+
+  async function replaceAnonymizationRules(token, rules) {
+    const updated = await persistRulesInSettings(token, { rules, version: DEFAULT_ANON_RULES.version });
+    return updated.rules;
+  }
+
+  async function createAnonymizationRule(token, rule) {
+    const settings = await getSettings(token);
+    const existing = readRulesFromSettings(settings);
+    const filtered = existing.rules.filter((entry) => entry.id !== rule.id);
+    const sanitized = sanitizeAnonymizationRules([...filtered, rule]);
+    const saved = await persistRulesInSettings(token, { rules: sanitized, version: existing.version });
+    const created = saved.rules.find((entry) => entry.id === rule.id);
+    return created ?? sanitized.find((entry) => entry.id === rule.id) ?? null;
+  }
+
+  async function updateAnonymizationRule(token, id, rule) {
+    const settings = await getSettings(token);
+    const existing = readRulesFromSettings(settings);
+    const index = existing.rules.findIndex((entry) => entry.id === id);
+    if (index === -1) {
+      return null;
+    }
+    const updatedRules = [...existing.rules];
+    updatedRules[index] = rowToAnonymizationRule(normalizeRuleForStorage({ ...rule, id }));
+    const saved = await persistRulesInSettings(token, { rules: updatedRules, version: existing.version });
+    return saved.rules.find((entry) => entry.id === id) ?? null;
+  }
+
+  async function deleteAnonymizationRule(token, id) {
+    const settings = await getSettings(token);
+    const existing = readRulesFromSettings(settings);
+    const remaining = existing.rules.filter((entry) => entry.id !== id);
+    if (remaining.length === existing.rules.length) {
+      return false;
+    }
+    await persistRulesInSettings(token, { rules: remaining, version: existing.version });
+    return true;
+  }
+
+  async function clearAnonymizationRules(token) {
+    const settings = await getSettings(token);
+    const updated = { ...settings };
+    if (ANON_RULES_KEY in updated) {
+      delete updated[ANON_RULES_KEY];
+    }
+    await updateSettings(token, updated);
+  }
+
   async function clearBankMappings(token) {
     void token;
     return;
@@ -388,9 +582,15 @@ function createDb(pool) {
     listTransactionImports,
     readMaskedTransactions,
     replaceMaskedTransactions,
+    listAnonymizationRules,
+    replaceAnonymizationRules,
+    createAnonymizationRule,
+    updateAnonymizationRule,
+    deleteAnonymizationRule,
     listBankMappings,
     upsertBankMapping,
     clearBankMappings,
+    clearAnonymizationRules,
     clearTransactions,
     MASKED_SNAPSHOT_CATEGORY,
   };
