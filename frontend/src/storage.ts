@@ -91,7 +91,8 @@ const TRANSACTIONS_KEY = "transactions_unified_v1";
 const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
 const DISPLAY_SETTINGS_KEY = "display_settings_v1";
-const CURRENT_RULE_VERSION = 2;
+const CURRENT_RULE_VERSION = 1;
+const ALLOWED_MASK_STRATEGIES = new Set<string>(["full", "keepFirstLast", "partialPercent"]);
 
 const bankMappingsCache: BankMapping[] = [];
 let remoteBankMappings: BankMapping[] = [];
@@ -101,6 +102,10 @@ let maskedTransactionsCache: UnifiedTx[] = [];
 let displaySettingsCache: DisplaySettings = sanitizeDisplaySettings(null);
 let settingsCache: Record<string, unknown> = {};
 let transactionImportsCache: TransactionImportSummary[] = [];
+let anonymizationRulesCache: { rules: AnonRule[]; version: number } = {
+  rules: [],
+  version: CURRENT_RULE_VERSION,
+};
 let initialized = false;
 let initializationPromise: Promise<void> | null = null;
 
@@ -114,12 +119,14 @@ export async function initializeStorage(): Promise<void> {
       const [
         settings,
         mappings,
+        rules,
         rawSnapshot,
         maskedSnapshot,
         masked,
       ] = await Promise.all([
         fetchSettingsFromBackend(),
         fetchBankMappingsFromBackend(),
+        fetchAnonymizationRulesFromBackend(),
         rawTransactionsSessionStorage.loadSnapshot(),
         maskedTransactionsStorage.loadSnapshot(),
         fetchMaskedTransactionsFromBackend(),
@@ -131,6 +138,7 @@ export async function initializeStorage(): Promise<void> {
       } else {
         displaySettingsCache = sanitizeDisplaySettings(null);
       }
+      anonymizationRulesCache = rules;
       remoteBankMappings = [...mappings];
       localBankMappings = loadLocalBankMappings();
       setBankMappingsCacheFromSources();
@@ -413,6 +421,25 @@ async function fetchSettingsFromBackend(): Promise<Record<string, unknown>> {
   const response = await apiRequest("/settings");
   const payload = await readJson<{ settings?: Record<string, unknown> }>(response);
   return payload.settings ?? {};
+}
+
+async function fetchAnonymizationRulesFromBackend(): Promise<{ rules: AnonRule[]; version: number }> {
+  ensureAnonymizationRulesCache();
+  const response = await apiRequest("/anonymization-rules");
+  const payload = await readJson<{ rules?: unknown }>(response);
+  const entries = Array.isArray(payload.rules) ? payload.rules : [];
+  let rules = entries.filter(isAnonRule).map(sanitizeRule);
+  if (rules.length === 0) {
+    rules =
+      anonymizationRulesCache.rules.length > 0
+        ? anonymizationRulesCache.rules.map(sanitizeRule)
+        : DEFAULT_RULES.rules.map(sanitizeRule);
+  }
+  persistAnonymizationRulesLocally({
+    rules,
+    version: CURRENT_RULE_VERSION,
+  });
+  return loadAnonymizationRules();
 }
 
 export async function fetchTransactionImportsFromBackend(): Promise<TransactionImportSummary[]> {
@@ -715,31 +742,6 @@ export async function persistMaskedTransactions(): Promise<void> {
   });
 }
 
-function isAnonRule(value: unknown): value is AnonRule {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const maybe = value as Partial<AnonRule> & { type?: string };
-  if (maybe.type === "regex") {
-    return (
-      typeof maybe.id === "string" &&
-      Array.isArray(maybe.fields) &&
-      maybe.fields.every((field) => typeof field === "string") &&
-      typeof maybe.pattern === "string" &&
-      typeof maybe.replacement === "string"
-    );
-  }
-  if (maybe.type === "mask") {
-    return (
-      typeof maybe.id === "string" &&
-      Array.isArray(maybe.fields) &&
-      maybe.fields.every((field) => typeof field === "string") &&
-      typeof maybe.maskStrategy === "string"
-    );
-  }
-  return false;
-}
-
 const DEFAULT_RULES: { version: number; rules: AnonRule[] } = {
   version: CURRENT_RULE_VERSION,
   rules: [
@@ -765,30 +767,89 @@ const DEFAULT_RULES: { version: number; rules: AnonRule[] } = {
 };
 
 function sanitizeRule(rule: AnonRule): AnonRule {
+  const fields = Array.isArray(rule.fields)
+    ? rule.fields
+        .filter((field): field is keyof UnifiedTx => typeof field === "string" && ALLOWED_TRANSACTION_KEYS.has(field))
+        .map((field) => field as keyof UnifiedTx)
+    : [];
+  const sanitizedFields = fields.length > 0 ? fields : ["booking_text"];
+  const enabled = rule.enabled !== false;
   if (rule.type === "regex") {
     return {
-      id: rule.id,
+      id: rule.id.trim(),
       type: "regex",
       pattern: rule.pattern,
       flags: rule.flags,
       replacement: rule.replacement,
-      fields: ["booking_text"],
-      enabled: rule.enabled !== false ? true : false,
+      fields: sanitizedFields,
+      enabled,
     };
   }
   return {
-    id: rule.id,
+    id: rule.id.trim(),
     type: "mask",
-    maskStrategy: rule.maskStrategy,
+    maskStrategy: ALLOWED_MASK_STRATEGIES.has(rule.maskStrategy) ? rule.maskStrategy : "full",
     maskChar: rule.maskChar,
     minLen: rule.minLen,
     maskPercent: rule.maskPercent,
-    fields: ["booking_text"],
-    enabled: rule.enabled !== false ? true : false,
+    fields: sanitizedFields,
+    enabled,
   };
 }
 
-export function loadAnonymizationRules(): { rules: AnonRule[]; version: number } {
+function updateSettingsCacheWithRules(payload: { rules: AnonRule[]; version: number }): void {
+  settingsCache = {
+    ...settingsCache,
+    [ANON_RULES_KEY]: {
+      version: payload.version ?? CURRENT_RULE_VERSION,
+      rules: payload.rules.map(sanitizeRule),
+    },
+  };
+}
+
+function persistAnonymizationRulesLocally(payload: { rules: AnonRule[]; version: number }): void {
+  anonymizationRulesCache = {
+    version: payload.version ?? CURRENT_RULE_VERSION,
+    rules: payload.rules.map(sanitizeRule),
+  };
+  updateSettingsCacheWithRules(anonymizationRulesCache);
+  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(anonymizationRulesCache, null, 2));
+}
+
+function isAnonRule(value: unknown): value is AnonRule {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const maybe = value as Partial<AnonRule> & { type?: string };
+  const fieldsValid =
+    Array.isArray(maybe.fields) &&
+    maybe.fields.length > 0 &&
+    maybe.fields.every((field) => typeof field === "string" && ALLOWED_TRANSACTION_KEYS.has(field));
+
+  if (maybe.type === "regex") {
+    return (
+      typeof maybe.id === "string" &&
+      fieldsValid &&
+      typeof maybe.pattern === "string" &&
+      typeof maybe.replacement === "string" &&
+      (!Object.prototype.hasOwnProperty.call(maybe, "flags") || typeof maybe.flags === "string")
+    );
+  }
+  if (maybe.type === "mask") {
+    return (
+      typeof maybe.id === "string" &&
+      fieldsValid &&
+      typeof maybe.maskStrategy === "string" &&
+      ALLOWED_MASK_STRATEGIES.has(maybe.maskStrategy as string) &&
+      (!Object.prototype.hasOwnProperty.call(maybe, "maskChar") || typeof maybe.maskChar === "string") &&
+      (!Object.prototype.hasOwnProperty.call(maybe, "minLen") || typeof maybe.minLen === "number") &&
+      (!Object.prototype.hasOwnProperty.call(maybe, "maskPercent") || typeof maybe.maskPercent === "number")
+    );
+  }
+  return false;
+}
+
+function loadAnonymizationRulesFromSession(): { rules: AnonRule[]; version: number } {
   const parsed = safeParse<unknown>(sessionScopedGetItem(ANON_RULES_KEY));
   if (
     parsed &&
@@ -802,43 +863,66 @@ export function loadAnonymizationRules(): { rules: AnonRule[]; version: number }
       typeof (parsed as { version?: number }).version === "number"
         ? (parsed as { version?: number }).version!
         : CURRENT_RULE_VERSION;
+    persistAnonymizationRulesLocally({ rules, version });
     return { rules, version };
   }
-  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(DEFAULT_RULES, null, 2));
+  persistAnonymizationRulesLocally(DEFAULT_RULES);
   return DEFAULT_RULES;
 }
 
-export function saveAnonymizationRules(rules: AnonRule[]): void {
-  const sanitized = {
-    version: CURRENT_RULE_VERSION,
-    rules: rules.map(sanitizeRule),
-  };
-  sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(sanitized, null, 2));
+function ensureAnonymizationRulesCache(): void {
+  if (anonymizationRulesCache.rules.length === 0) {
+    anonymizationRulesCache = loadAnonymizationRulesFromSession();
+  }
 }
 
-export function importAnonymizationRules(
+export function loadAnonymizationRules(): { rules: AnonRule[]; version: number } {
+  ensureAnonymizationRulesCache();
+  return {
+    version: anonymizationRulesCache.version,
+    rules: anonymizationRulesCache.rules.map((rule) => sanitizeRule(rule)),
+  };
+}
+
+export async function saveAnonymizationRules(rules: AnonRule[]): Promise<void> {
+  const sanitized = rules.map(sanitizeRule);
+  persistAnonymizationRulesLocally({
+    version: CURRENT_RULE_VERSION,
+    rules: sanitized,
+  });
+  await apiRequest("/anonymization-rules", {
+    method: "PUT",
+    body: JSON.stringify({ rules: sanitized }),
+  });
+}
+
+export async function importAnonymizationRules(
   raw: unknown
-): { rules: AnonRule[]; version: number } | null {
+): Promise<{ rules: AnonRule[]; version: number } | null> {
+  let payload: { rules: AnonRule[]; version: number } | null = null;
   if (Array.isArray(raw)) {
     const rules = raw.filter(isAnonRule).map(sanitizeRule);
-    const payload = { version: CURRENT_RULE_VERSION, rules };
-    sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
-    return payload;
+    payload = { version: CURRENT_RULE_VERSION, rules };
   }
 
-  if (typeof raw === "object" && raw !== null && "rules" in raw) {
+  if (!payload && typeof raw === "object" && raw !== null && "rules" in raw) {
     const maybe = raw as { rules?: unknown; version?: unknown };
     if (Array.isArray(maybe.rules)) {
       const rules = maybe.rules.filter(isAnonRule).map(sanitizeRule);
       const version = typeof maybe.version === "number" ? maybe.version : CURRENT_RULE_VERSION;
-      const payload = { version, rules };
-      sessionScopedSetItem(ANON_RULES_KEY, JSON.stringify(payload, null, 2));
-      return payload;
+      payload = { version, rules };
     }
   }
 
-  return null;
+  if (!payload) {
+    return null;
+  }
+
+  await saveAnonymizationRules(payload.rules);
+  return loadAnonymizationRules();
 }
+
+ensureAnonymizationRulesCache();
 
 export function clearPersistentData(): void {
   transactionsCache = [];
@@ -849,6 +933,7 @@ export function clearPersistentData(): void {
   displaySettingsCache = sanitizeDisplaySettings(null);
   settingsCache = {};
   transactionImportsCache = [];
+  anonymizationRulesCache = { rules: [], version: CURRENT_RULE_VERSION };
   initialized = false;
   initializationPromise = null;
   fireAndForget(

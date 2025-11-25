@@ -16,6 +16,7 @@ const ALLOWED_TRANSACTION_KEYS = new Set([
   "booking_hash",
   "booking_account",
 ]);
+const ALLOWED_MASK_STRATEGIES = new Set(["full", "keepFirstLast", "partialPercent"]);
 
 function parseOrigins(input) {
   if (!input) {
@@ -287,6 +288,65 @@ function isBankMapping(value) {
   return true;
 }
 
+function isAnonymizationRule(value) {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const maybe = value;
+  if (typeof maybe.id !== "string" || maybe.id.trim().length === 0) {
+    return false;
+  }
+  if (!Array.isArray(maybe.fields) || maybe.fields.length === 0) {
+    return false;
+  }
+  if (!maybe.fields.every((field) => typeof field === "string" && ALLOWED_TRANSACTION_KEYS.has(field))) {
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(maybe, "enabled") && typeof maybe.enabled !== "boolean") {
+    return false;
+  }
+
+  if (maybe.type === "regex") {
+    if (typeof maybe.pattern !== "string" || typeof maybe.replacement !== "string") {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(maybe, "flags") && typeof maybe.flags !== "string") {
+      return false;
+    }
+    return true;
+  }
+
+  if (maybe.type === "mask") {
+    if (typeof maybe.maskStrategy !== "string" || !ALLOWED_MASK_STRATEGIES.has(maybe.maskStrategy)) {
+      return false;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(maybe, "maskChar") &&
+      maybe.maskChar !== undefined &&
+      typeof maybe.maskChar !== "string"
+    ) {
+      return false;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(maybe, "minLen") &&
+      maybe.minLen !== undefined &&
+      (!Number.isInteger(maybe.minLen) || maybe.minLen < 0)
+    ) {
+      return false;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(maybe, "maskPercent") &&
+      maybe.maskPercent !== undefined &&
+      typeof maybe.maskPercent !== "number"
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function asyncHandler(handler) {
   return (req, res, next) => {
     Promise.resolve(handler(req, res, next)).catch(next);
@@ -373,6 +433,17 @@ function createApp({ db, origins = [], basePath } = {}) {
   }
 
   function registerRoutes(router) {
+    function normalizeRulePayload(payload) {
+      if (typeof payload !== "object" || payload === null) {
+        return null;
+      }
+      const id = typeof payload.id === "string" ? payload.id.trim() : "";
+      const fields = Array.isArray(payload.fields)
+        ? payload.fields.map((field) => (typeof field === "string" ? field.trim() : field))
+        : [];
+      return { ...payload, id, fields };
+    }
+
     router.post(
       "/auth/token",
       asyncHandler(async (req, res) => {
@@ -527,6 +598,85 @@ function createApp({ db, origins = [], basePath } = {}) {
     );
 
     router.get(
+      "/anonymization-rules",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const rules = await db.listAnonymizationRules(req.authToken);
+        res.json({ rules });
+      }),
+    );
+
+    router.put(
+      "/anonymization-rules",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const incoming = Array.isArray(req.body?.rules) ? req.body.rules : [];
+        const sanitized = incoming.map(normalizeRulePayload).filter(isAnonymizationRule);
+        if (sanitized.length !== incoming.length) {
+          res.status(400).json({ error: "INVALID_RULE_PAYLOAD" });
+          return;
+        }
+        const rules = await db.replaceAnonymizationRules(req.authToken, sanitized);
+        res.json({ rules });
+      }),
+    );
+
+    router.post(
+      "/anonymization-rules",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const normalized = normalizeRulePayload(req.body);
+        if (!isAnonymizationRule(normalized)) {
+          res.status(400).json({ error: "INVALID_RULE" });
+          return;
+        }
+        const rule = await db.createAnonymizationRule(req.authToken, normalized);
+        res.status(201).json({ rule });
+      }),
+    );
+
+    router.put(
+      "/anonymization-rules/:id",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
+        if (!id) {
+          res.status(400).json({ error: "INVALID_RULE_ID" });
+          return;
+        }
+        const normalized = normalizeRulePayload({ ...req.body, id });
+        if (!isAnonymizationRule(normalized)) {
+          res.status(400).json({ error: "INVALID_RULE" });
+          return;
+        }
+        const rule = await db.updateAnonymizationRule(req.authToken, id, normalized);
+        if (!rule) {
+          res.status(404).json({ error: "RULE_NOT_FOUND" });
+          return;
+        }
+        res.json({ rule });
+      }),
+    );
+
+    router.delete(
+      "/anonymization-rules/:id",
+      requireAuth,
+      asyncHandler(async (req, res) => {
+        const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
+        if (!id) {
+          res.status(400).json({ error: "INVALID_RULE_ID" });
+          return;
+        }
+        const deleted = await db.deleteAnonymizationRule(req.authToken, id);
+        if (!deleted) {
+          res.status(404).json({ error: "RULE_NOT_FOUND" });
+          return;
+        }
+        res.status(204).end();
+      }),
+    );
+
+    router.get(
       "/bank-mapping",
       requireAuth,
       asyncHandler(async (req, res) => {
@@ -555,6 +705,7 @@ function createApp({ db, origins = [], basePath } = {}) {
         await Promise.all([
           db.clearTransactions(req.authToken),
           db.clearBankMappings(req.authToken),
+          db.clearAnonymizationRules(req.authToken),
           db.updateSettings(req.authToken, {}),
         ]);
         res.status(204).end();

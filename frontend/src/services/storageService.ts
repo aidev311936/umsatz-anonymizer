@@ -68,7 +68,7 @@ export async function storeDisplaySettings(settings: DisplaySettings): Promise<v
 }
 
 export async function storeAnonymizationRules(rules: AnonRule[]): Promise<void> {
-  saveAnonymizationRules(rules);
+  await saveAnonymizationRules(rules);
 }
 
 export async function storeBankMapping(mapping: BankMapping): Promise<BankMapping> {
@@ -80,7 +80,7 @@ export async function importBankMappingsFromFile(raw: unknown): Promise<BankMapp
 }
 
 export async function importRulesFromFile(raw: unknown): Promise<AnonRule[] | null> {
-  const result = importAnonymizationRules(raw);
+  const result = await importAnonymizationRules(raw);
   return result?.rules ?? null;
 }
 
