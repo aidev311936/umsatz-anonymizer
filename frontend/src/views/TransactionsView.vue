@@ -102,6 +102,7 @@
   <RuleCreationDialog
     :open="ruleDialogOpen"
     :selection="dialogSelection"
+    mode="selection"
     @close="onDialogClose"
     @created="onRuleCreated"
   />
