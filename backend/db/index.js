@@ -1,6 +1,17 @@
 const { Pool } = require("pg");
 
 const MASKED_SNAPSHOT_CATEGORY = "__masked_snapshot__";
+const ALLOWED_TRANSACTION_KEYS = new Set([
+  "bank_name",
+  "booking_date",
+  "booking_date_raw",
+  "booking_date_iso",
+  "booking_text",
+  "booking_type",
+  "booking_amount",
+  "booking_hash",
+  "booking_account",
+]);
 const ANON_RULES_KEY = "anonymization_rules_v1";
 const DEFAULT_ANON_RULES = {
   version: 1,
