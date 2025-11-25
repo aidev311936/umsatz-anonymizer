@@ -8,14 +8,14 @@
           <button
             type="button"
             class="inline-flex items-center rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50"
-            @click="addRegexRule"
+            @click="openDialog('regex')"
           >
             Regex-Regel hinzufügen
           </button>
           <button
             type="button"
             class="inline-flex items-center rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50"
-            @click="addMaskRule"
+            @click="openDialog('mask')"
           >
             Maskierungsregel hinzufügen
           </button>
@@ -169,12 +169,21 @@
       <p v-if="rulesStore.error" class="mt-2 text-sm font-medium text-rose-600">{{ rulesStore.error }}</p>
     </section>
   </div>
+  <RuleCreationDialog
+    :open="ruleDialogOpen"
+    :selection="dialogSelection"
+    :default-type="dialogType"
+    :current-rules="rules"
+    @close="onDialogClose"
+    @created="onRuleCreated"
+  />
 </template>
 
 <script setup lang="ts">
 import { Disclosure, DisclosureButton, DisclosurePanel } from "@headlessui/vue";
 import { ChevronDownIcon } from "@heroicons/vue/24/outline";
 import { reactive, ref, watchEffect } from "vue";
+import RuleCreationDialog, { type RuleCreationSelection } from "../components/RuleCreationDialog.vue";
 import { useAnonymizationRulesStore } from "../stores/anonymizationRules";
 import type { AnonRule } from "../services/storageService";
 
@@ -182,6 +191,9 @@ const rulesStore = useAnonymizationRulesStore();
 const rules = reactive<AnonRule[]>([]);
 const statusMessage = ref("");
 const importInput = ref<HTMLInputElement | null>(null);
+const ruleDialogOpen = ref(false);
+const dialogSelection = ref<RuleCreationSelection | null>(null);
+const dialogType = ref<"regex" | "mask">("regex");
 
 function cloneRule(rule: AnonRule): AnonRule {
   return JSON.parse(JSON.stringify(rule)) as AnonRule;
@@ -191,41 +203,22 @@ watchEffect(() => {
   rules.splice(0, rules.length, ...rulesStore.rules.map((rule) => cloneRule(rule)));
 });
 
-function createRuleId(prefix: string): string {
-  const base = `${prefix}-${Date.now().toString(36)}`;
-  let id = base;
-  let counter = 1;
-  const existingIds = new Set(rules.map((rule) => rule.id));
-  while (existingIds.has(id)) {
-    id = `${base}-${counter}`;
-    counter += 1;
-  }
-  return id;
+void rulesStore.initialize();
+
+function openDialog(type: "regex" | "mask"): void {
+  dialogType.value = type;
+  dialogSelection.value = { selectedText: "", field: "booking_text" };
+  ruleDialogOpen.value = true;
 }
 
-function addRegexRule(): void {
-  rules.push({
-    id: createRuleId("regex"),
-    type: "regex",
-    fields: ["booking_text"],
-    pattern: "",
-    flags: "gi",
-    replacement: "***",
-    enabled: true,
-  });
+function onDialogClose(): void {
+  ruleDialogOpen.value = false;
+  dialogSelection.value = null;
 }
 
-function addMaskRule(): void {
-  rules.push({
-    id: createRuleId("mask"),
-    type: "mask",
-    fields: ["booking_text"],
-    maskStrategy: "partialPercent",
-    maskChar: "•",
-    minLen: 4,
-    maskPercent: 0.5,
-    enabled: true,
-  });
+function onRuleCreated(rule: AnonRule): void {
+  statusMessage.value = `Regel "${rule.id}" gespeichert.`;
+  onDialogClose();
 }
 
 function removeRule(id: string): void {
