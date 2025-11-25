@@ -200,7 +200,12 @@ export interface RuleCreationSelection {
   bookingHash?: string;
 }
 
-const props = defineProps<{ open: boolean; selection?: RuleCreationSelection | null; defaultType?: "regex" | "mask" }>();
+const props = defineProps<{
+  open: boolean;
+  selection?: RuleCreationSelection | null;
+  defaultType?: "regex" | "mask";
+  currentRules?: AnonRule[];
+}>();
 const emit = defineEmits<{ (e: "close"): void; (e: "created", value: AnonRule): void }>();
 
 const rulesStore = useAnonymizationRulesStore();
@@ -353,7 +358,8 @@ async function onSubmit(): Promise<void> {
   saveError.value = null;
   try {
     await rulesStore.initialize();
-    await rulesStore.save([...rulesStore.rules, newRule]);
+    const baseRules = props.currentRules ?? rulesStore.rules;
+    await rulesStore.save([...baseRules, newRule]);
     emit("created", newRule);
     onClose();
   } catch (error) {

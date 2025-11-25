@@ -173,6 +173,7 @@
     :open="ruleDialogOpen"
     :selection="dialogSelection"
     :default-type="dialogType"
+    :current-rules="rules"
     @close="onDialogClose"
     @created="onRuleCreated"
   />
