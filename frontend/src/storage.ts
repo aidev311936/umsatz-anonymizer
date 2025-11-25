@@ -92,6 +92,17 @@ const TRANSACTIONS_MASKED_KEY = "transactions_unified_masked_v1";
 const ANON_RULES_KEY = "anonymization_rules_v1";
 const DISPLAY_SETTINGS_KEY = "display_settings_v1";
 const CURRENT_RULE_VERSION = 1;
+const ALLOWED_TRANSACTION_KEYS = new Set<keyof UnifiedTx>([
+  "bank_name",
+  "booking_date",
+  "booking_date_raw",
+  "booking_date_iso",
+  "booking_text",
+  "booking_type",
+  "booking_amount",
+  "booking_account",
+  "booking_hash",
+]);
 const ALLOWED_MASK_STRATEGIES = new Set<string>(["full", "keepFirstLast", "partialPercent"]);
 
 const bankMappingsCache: BankMapping[] = [];
