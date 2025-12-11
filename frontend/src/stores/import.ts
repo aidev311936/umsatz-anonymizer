@@ -19,6 +19,7 @@ interface ImportState {
   lastImported: UnifiedTx[];
   detectedBanks: DetectedBankCandidate[];
   selectedDetectedBankIndex: number | null;
+  autoSelected: boolean;
 }
 
 export const useImportStore = defineStore("import", {
@@ -37,6 +38,7 @@ export const useImportStore = defineStore("import", {
     lastImported: [],
     detectedBanks: [],
     selectedDetectedBankIndex: null,
+    autoSelected: false,
   }),
   getters: {
     selectedDetectedBank(state): DetectedBankCandidate | null {
@@ -71,23 +73,37 @@ export const useImportStore = defineStore("import", {
       this.error = null;
       this.detectedBanks = [];
       this.selectedDetectedBankIndex = null;
+      this.autoSelected = false;
     },
     setDetectedBankCandidates(candidates: DetectedBankCandidate[]): void {
       this.detectedBanks = [...candidates];
+      this.autoSelected = false;
+
       if (candidates.length === 0) {
         this.selectedDetectedBankIndex = null;
         this.detectedBank = null;
         this.bankName = "";
         return;
       }
+
+      // Auto-select if there's exactly one candidate with passed=true
+      const passedCandidates = candidates.filter((candidate) => candidate.passed);
+      if (passedCandidates.length === 1) {
+        const autoSelectIndex = candidates.findIndex((candidate) => candidate.passed);
+        this.selectDetectedBank(autoSelectIndex);
+        this.autoSelected = true;
+        return;
+      }
+
+      // If multiple passed candidates or no passed candidates, don't auto-select
       const preferredIndex = candidates.findIndex((candidate) => candidate.passed);
-      if (preferredIndex === -1) {
+      if (preferredIndex !== -1) {
+        this.selectDetectedBank(preferredIndex);
+      } else {
         this.selectedDetectedBankIndex = null;
         this.detectedBank = null;
         this.bankName = "";
-        return;
       }
-      this.selectDetectedBank(preferredIndex);
     },
     selectDetectedBank(index: number | null): void {
       if (index === null || index < 0 || index >= this.detectedBanks.length) {
@@ -101,6 +117,8 @@ export const useImportStore = defineStore("import", {
       this.detectedBank = bankName || null;
       if (bankName) {
         this.setBankName(bankName);
+        // Load smart default for booking account from sessionStorage
+        this.loadBookingAccountDefault(bankName);
       }
     },
     async loadFile(file: File): Promise<void> {
@@ -145,6 +163,19 @@ export const useImportStore = defineStore("import", {
         this.loading = false;
       }
     },
+    loadBookingAccountDefault(bankName: string): void {
+      const key = `booking_account_${bankName.toLowerCase()}`;
+      const saved = sessionStorage.getItem(key);
+      if (saved) {
+        this.setBookingAccount(saved);
+      }
+    },
+    saveBookingAccountDefault(): void {
+      if (this.bankName && this.bookingAccount) {
+        const key = `booking_account_${this.bankName.toLowerCase()}`;
+        sessionStorage.setItem(key, this.bookingAccount);
+      }
+    },
     importTransactions(displaySettings?: Parameters<typeof createTransactions>[4]): UnifiedTx[] {
       if (!this.mapping || this.header.length === 0) {
         this.error = "Bitte Mapping und Kopfzeile prüfen";
@@ -158,6 +189,8 @@ export const useImportStore = defineStore("import", {
         displaySettings,
       );
       this.lastImported = transactions;
+      // Save booking account for future imports
+      this.saveBookingAccountDefault();
       return transactions;
     },
   },

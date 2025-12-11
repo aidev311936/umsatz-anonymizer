@@ -28,7 +28,7 @@
                 </span>
               </div>
               <select
-                v-if="importStore.detectedBanks.length > 0"
+                v-if="importStore.detectedBanks.length > 1"
                 id="bank"
                 v-model="selectedDetectedBankOption"
                 class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -39,6 +39,14 @@
                   {{ candidate.mapping.bank_name }}
                 </option>
               </select>
+              <div v-else-if="importStore.detectedBanks.length === 1" class="mt-2">
+                <div class="flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2">
+                  <span class="flex-1 text-sm text-slate-700">{{ importStore.detectedBank }}</span>
+                  <span v-if="importStore.autoSelected" class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                    Automatisch erkannt
+                  </span>
+                </div>
+              </div>
               <input
                 v-else
                 id="bank"
@@ -88,7 +96,7 @@
                 Geben Sie hier einen Alias ein, damit Sie die Buchungen später leichter zuordnen können.
               </p>
             </div>
-            <p v-if="importStore.detectedBank" class="text-sm text-slate-500">
+            <p v-if="importStore.detectedBank && !importStore.autoSelected" class="text-sm text-slate-500">
               Erkannte Bank: <span class="font-medium">{{ importStore.detectedBank }}</span>
             </p>
             <p v-if="importStore.warning" class="text-sm font-medium text-amber-600">{{ importStore.warning }}</p>

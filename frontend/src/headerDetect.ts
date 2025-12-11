@@ -21,6 +21,22 @@ export interface HeaderDetectionResult {
   warning?: string;
 }
 
+/**
+ * Scoring weights for the bank detection algorithm.
+ * 
+ * The algorithm evaluates CSV files against bank mappings to determine which bank
+ * format matches best. Each scoring component contributes to the total score:
+ * 
+ * - HEADER_MATCH_SCORE (100): Awarded when the header signature matches exactly
+ * - COLUMN_COUNT_SCORE (60): Awarded when the column count matches expected value
+ * - COLUMN_MARKER_SCORE (20): Awarded when column markers (date/number/text) match
+ * - DATE_COMPATIBILITY_SCORE (15): Awarded when date columns parse correctly
+ * - AMOUNT_COMPATIBILITY_SCORE (15): Awarded when amount columns are valid numbers
+ * 
+ * Total possible score: 100 + 60 + 20 + 15 + 15 = 210 points
+ * A score ≥ 100 typically indicates a strong match. Candidates are marked as "passed"
+ * when they match either the header signature OR the structural requirements.
+ */
 const HEADER_MATCH_SCORE = 100;
 const COLUMN_COUNT_SCORE = 60;
 const COLUMN_MARKER_SCORE = 20;

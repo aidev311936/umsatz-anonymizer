@@ -362,9 +362,14 @@ async function onSubmit(): Promise<void> {
     await rulesStore.save([...baseRules, newRule]);
     emit("created", newRule);
     onClose();
-  } catch (error) {
-    saveError.value =
-      error instanceof Error ? error.message : "Regel konnte nicht gespeichert werden.";
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      saveError.value = error.message;
+    } else if (typeof error === "string") {
+      saveError.value = error;
+    } else {
+      saveError.value = "Regel konnte nicht gespeichert werden.";
+    }
   } finally {
     saving.value = false;
   }
